@@ -99,23 +99,20 @@ public static class PdfEngine
     }
 
     /// <summary>
-    /// One portrait A4 page per image: the image is scaled to fit inside a ~1 cm margin, centered,
+    /// One portrait A4 page per image: the image is scaled to fit the page edge to edge, centered,
     /// never distorted. Pixels beyond 300 dpi at that size are dropped (no visible gain, much bigger PDF).
     /// </summary>
     public static void ImagesToPdf(IReadOnlyList<string> images, string output, Action<double>? progress = null)
     {
-        const double margin = 28; // points (~1 cm)
         const double maxDpi = 300;
         var pageWidth = XUnit.FromMillimeter(210).Point;
         var pageHeight = XUnit.FromMillimeter(297).Point;
-        var boxWidth = pageWidth - 2 * margin;
-        var boxHeight = pageHeight - 2 * margin;
 
         using var document = new PdfDocument();
         for (var i = 0; i < images.Count; i++)
         {
             using var image = ImageEngine.Load(images[i]);
-            var scale = Math.Min(boxWidth / image.Width, boxHeight / image.Height);
+            var scale = Math.Min(pageWidth / image.Width, pageHeight / image.Height);
             var w = image.Width * scale;
             var h = image.Height * scale;
 
