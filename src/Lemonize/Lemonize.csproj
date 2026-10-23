@@ -1,0 +1,53 @@
+﻿<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <OutputType>WinExe</OutputType>
+    <TargetFramework>net8.0-windows10.0.19041.0</TargetFramework>
+    <SupportedOSPlatformVersion>10.0.19041.0</SupportedOSPlatformVersion>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <UseWPF>true</UseWPF>
+    <UseWindowsForms>true</UseWindowsForms>
+    <ApplicationManifest>app.manifest</ApplicationManifest>
+    <ApplicationIcon>Assets\lemonize.ico</ApplicationIcon>
+    <AssemblyName>Lemonize</AssemblyName>
+    <RootNamespace>Lemonize</RootNamespace>
+    <Version>1.0.0</Version>
+    <Product>Lemonize</Product>
+    <Description>Drag-and-drop file converter for Windows</Description>
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+    <NoWarn>$(NoWarn);WFAC010</NoWarn>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <!-- WinForms is only used for the tray icon; keep WPF types unambiguous. -->
+    <Using Remove="System.Windows.Forms" />
+    <Using Remove="System.Drawing" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- Ghostscript (AGPL) for PDF compression, copied next to the exe. Fine for personal use;
+         redistributing Lemonize with it requires AGPL compliance or an Artifex license. -->
+    <None Include="..\..\third_party\ghostscript\**\*" LinkBase="ghostscript" CopyToOutputDirectory="PreserveNewest" ExcludeFromSingleFile="true" />
+    <!-- Pandoc (GPL) for richer DOCX/EPUB/Markdown conversions, copied next to the exe. -->
+    <None Include="..\..\third_party\pandoc\**\*" LinkBase="pandoc" CopyToOutputDirectory="PreserveNewest" ExcludeFromSingleFile="true" />
+    <!-- FFmpeg (GPL, gyan.dev essentials build) for video and audio, copied next to the exe. -->
+    <None Include="..\..\third_party\ffmpeg\**\*" LinkBase="ffmpeg" CopyToOutputDirectory="PreserveNewest" ExcludeFromSingleFile="true" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <Resource Include="Assets\lemonize.ico" />
+    <Resource Include="Assets\lemonize.png" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="DocumentFormat.OpenXml" Version="3.5.1" />
+    <PackageReference Include="Magick.NET-Q8-AnyCPU" Version="15.0.0" />
+    <!-- 6.2.4 is the last MIT release; 6.5+ is AGPL. -->
+    <PackageReference Include="PDFsharp" Version="6.2.4" />
+    <PackageReference Include="PdfPig" Version="0.1.16" />
+    <PackageReference Include="SharpCompress" Version="0.50.7" />
+    <PackageReference Include="ZXing.Net" Version="0.16.11" />
+  </ItemGroup>
+
+</Project>

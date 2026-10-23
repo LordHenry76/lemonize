@@ -1,0 +1,36 @@
+﻿
+Microsoft Visual Studio Solution File, Format Version 12.00
+# Visual Studio Version 17
+VisualStudioVersion = 17.0.31903.59
+MinimumVisualStudioVersion = 10.0.40219.1
+Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "src", "src", "{7FA99132-6BC5-40A3-AF82-74E89CD7282B}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Lemonize", "src\Lemonize\Lemonize.csproj", "{BCBAF941-D4A5-41F5-B424-224CF142D129}"
+EndProject
+Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "tests", "tests", "{D0143A3B-ABDA-40CD-9D68-F6B46F59CBB3}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Lemonize.Smoke", "tests\Lemonize.Smoke\Lemonize.Smoke.csproj", "{C7601D35-C6EE-44EA-BA36-77E57CEC45B8}"
+EndProject
+Global
+	GlobalSection(SolutionConfigurationPlatforms) = preSolution
+		Debug|Any CPU = Debug|Any CPU
+		Release|Any CPU = Release|Any CPU
+	EndGlobalSection
+	GlobalSection(SolutionProperties) = preSolution
+		HideSolutionNode = FALSE
+	EndGlobalSection
+	GlobalSection(ProjectConfigurationPlatforms) = postSolution
+		{BCBAF941-D4A5-41F5-B424-224CF142D129}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{BCBAF941-D4A5-41F5-B424-224CF142D129}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{BCBAF941-D4A5-41F5-B424-224CF142D129}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{BCBAF941-D4A5-41F5-B424-224CF142D129}.Release|Any CPU.Build.0 = Release|Any CPU
+		{C7601D35-C6EE-44EA-BA36-77E57CEC45B8}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{C7601D35-C6EE-44EA-BA36-77E57CEC45B8}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{C7601D35-C6EE-44EA-BA36-77E57CEC45B8}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{C7601D35-C6EE-44EA-BA36-77E57CEC45B8}.Release|Any CPU.Build.0 = Release|Any CPU
+	EndGlobalSection
+	GlobalSection(NestedProjects) = preSolution
+		{BCBAF941-D4A5-41F5-B424-224CF142D129} = {7FA99132-6BC5-40A3-AF82-74E89CD7282B}
+		{C7601D35-C6EE-44EA-BA36-77E57CEC45B8} = {D0143A3B-ABDA-40CD-9D68-F6B46F59CBB3}
+	EndGlobalSection
+EndGlobal

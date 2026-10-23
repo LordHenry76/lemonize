@@ -1,0 +1,12 @@
+# Build output
+bin/
+obj/
+build/
+publish/
+dist/
+.vs/
+*.user
+
+# Bundled programs: too large for git, fetched by tools/fetch-third-party.ps1
+third_party/**/*.exe
+third_party/**/*.dll
