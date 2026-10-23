@@ -44,9 +44,12 @@
         </DockPanel>
         <TextBlock x:Name="FfmpegStatus" Style="{StaticResource Dim}" Margin="0,4,0,0" />
 
-        <StackPanel Orientation="Horizontal" HorizontalAlignment="Right" Margin="0,24,0,0">
-            <Button Content="Cancel" IsCancel="True" Margin="0,0,8,0" MinWidth="80" Click="OnCancel" />
-            <Button Content="Save" IsDefault="True" Style="{StaticResource Primary}" MinWidth="80" Click="OnSave" />
-        </StackPanel>
+        <DockPanel Margin="0,24,0,0">
+            <StackPanel Orientation="Horizontal" DockPanel.Dock="Right">
+                <Button Content="Cancel" IsCancel="True" Margin="0,0,8,0" MinWidth="80" Click="OnCancel" />
+                <Button Content="Save" IsDefault="True" Style="{StaticResource Primary}" MinWidth="80" Click="OnSave" />
+            </StackPanel>
+            <ui:CreditLine VerticalAlignment="Center" />
+        </DockPanel>
     </StackPanel>
 </ui:ThemedWindow>

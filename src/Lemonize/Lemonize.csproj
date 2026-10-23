@@ -12,8 +12,11 @@
     <ApplicationIcon>Assets\lemonize.ico</ApplicationIcon>
     <AssemblyName>Lemonize</AssemblyName>
     <RootNamespace>Lemonize</RootNamespace>
-    <Version>1.0.1</Version>
+    <Version>1.0.2</Version>
     <Product>Lemonize</Product>
+    <Company>[wild]lab</Company>
+    <Authors>[wild]lab</Authors>
+    <Copyright>© 2026 [wild]lab</Copyright>
     <Description>Drag-and-drop file converter for Windows</Description>
     <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
     <NoWarn>$(NoWarn);WFAC010</NoWarn>

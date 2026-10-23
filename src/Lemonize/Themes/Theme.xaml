@@ -132,6 +132,25 @@
         <Setter Property="BorderBrush" Value="Transparent" />
     </Style>
 
+    <!-- Borderless clickable content (e.g. the developer logo) that dims slightly on hover -->
+    <Style x:Key="LinkButton" TargetType="Button">
+        <Setter Property="Cursor" Value="Hand" />
+        <Setter Property="FocusVisualStyle" Value="{x:Null}" />
+        <Setter Property="Opacity" Value="0.85" />
+        <Setter Property="Template">
+            <Setter.Value>
+                <ControlTemplate TargetType="Button">
+                    <ContentPresenter Margin="0,2" />
+                </ControlTemplate>
+            </Setter.Value>
+        </Setter>
+        <Style.Triggers>
+            <Trigger Property="IsMouseOver" Value="True">
+                <Setter Property="Opacity" Value="1" />
+            </Trigger>
+        </Style.Triggers>
+    </Style>
+
     <!-- Toggle buttons used as tool pickers -->
     <Style x:Key="ToolToggle" TargetType="RadioButton">
         <Setter Property="Foreground" Value="{StaticResource Text}" />

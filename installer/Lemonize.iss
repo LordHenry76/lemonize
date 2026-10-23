@@ -12,7 +12,11 @@ AppId={{2FA08F68-8519-4D09-82CE-EC351B790C54}
 AppName=Lemonize
 AppVersion={#AppVersion}
 AppVerName=Lemonize {#AppVersion}
-AppPublisher=Lemonize
+AppPublisher=[wild]lab
+AppPublisherURL=https://lordhenry76.github.io
+AppSupportURL=https://lordhenry76.github.io
+VersionInfoCompany=[wild]lab
+AppCopyright=© 2026 [wild]lab
 VersionInfoVersion={#AppVersion}
 ; Per-user install: no administrator rights, lands in %LOCALAPPDATA%\Programs\Lemonize.
 PrivilegesRequired=lowest

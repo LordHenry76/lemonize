@@ -169,7 +169,7 @@ public partial class App
         _tray = new Forms.NotifyIcon
         {
             Icon = System.Drawing.Icon.ExtractAssociatedIcon(Environment.ProcessPath!),
-            Text = Loc.T("Lemonize — drag files with Shift"),
+            Text = $"Lemonize {AppInfo.Version} — " + Loc.T("drag files with Shift"),
             ContextMenuStrip = menu,
             Visible = true,
         };

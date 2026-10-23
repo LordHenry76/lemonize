@@ -9,6 +9,7 @@
             <RowDefinition Height="Auto" />
             <RowDefinition Height="*" />
             <RowDefinition Height="Auto" />
+            <RowDefinition Height="Auto" />
         </Grid.RowDefinitions>
 
         <!-- Header -->
@@ -88,5 +89,8 @@
                 <WrapPanel x:Name="ComponentList" VerticalAlignment="Center" />
             </DockPanel>
         </Border>
+
+        <!-- Version and credit -->
+        <ui:CreditLine Grid.Row="3" HorizontalAlignment="Right" Margin="0,12,2,0" />
     </Grid>
 </ui:ThemedWindow>

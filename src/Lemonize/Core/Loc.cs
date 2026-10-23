@@ -163,7 +163,9 @@ public static class Loc
         ["Drag wheel enabled"] = "Ruota di trascinamento attiva",
         ["Settings…"] = "Impostazioni…",
         ["Quit Lemonize"] = "Esci da Lemonize",
-        ["Lemonize — drag files with Shift"] = "Lemonize — trascina i file con Shift",
+        ["drag files with Shift"] = "trascina i file con Shift",
+
+        ["developed by"] = "sviluppato da",
 
         // ---------- Main window ----------
         ["Convert, compress and edit files right where you drag them."] = "Converti, comprimi e modifica i file proprio dove li trascini.",
