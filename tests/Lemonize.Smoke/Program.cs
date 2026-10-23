@@ -193,6 +193,16 @@ await Check("QR read (pdf page 1 has no code → empty ok)", async () =>
     return [P("pages.pdf")];
 });
 
+await Check("PDF non bloccato dopo conversione e anteprima", async () =>
+{
+    await Converter.ConvertAsync(P("textdoc.pdf"), "jpg", new Job("t", null), default);
+    Lemonize.Interop.ShellThumbnails.Get(P("textdoc.pdf"), 96);
+    await PdfEngine.PageCountAsync(P("textdoc.pdf"));
+    // Renaming fails if any handle on the file is still open.
+    File.Move(P("textdoc.pdf"), P("textdoc-renamed.pdf"));
+    File.Move(P("textdoc-renamed.pdf"), P("textdoc.pdf"));
+    return [P("textdoc.pdf")];
+});
 await Check("pdf merge", () =>
 {
     var o = P("Merged.pdf");

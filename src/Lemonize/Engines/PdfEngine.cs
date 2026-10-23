@@ -6,7 +6,6 @@ using PdfSharp.Pdf;
 using PdfSharp.Pdf.Advanced;
 using PdfSharp.Pdf.IO;
 using UglyToad.PdfPig.DocumentLayoutAnalysis.TextExtractor;
-using Windows.Storage;
 using Windows.Storage.Streams;
 using WinPdf = Windows.Data.Pdf;
 
@@ -55,10 +54,18 @@ public static class PdfEngine
         return result;
     }
 
+    /// <summary>
+    /// Loads the PDF from an in-memory copy. Handing Windows the file itself (LoadFromFileAsync) lets it
+    /// keep the file open until garbage collection on some Windows builds, so users couldn't rename or
+    /// delete the original after a conversion.
+    /// </summary>
     private static async Task<WinPdf.PdfDocument> LoadWinPdfAsync(string path)
     {
-        var file = await StorageFile.GetFileFromPathAsync(Path.GetFullPath(path));
-        return await WinPdf.PdfDocument.LoadFromFileAsync(file);
+        var bytes = await File.ReadAllBytesAsync(path);
+        var stream = new InMemoryRandomAccessStream();
+        await stream.WriteAsync(System.Runtime.InteropServices.WindowsRuntime.WindowsRuntimeBufferExtensions.AsBuffer(bytes));
+        stream.Seek(0);
+        return await WinPdf.PdfDocument.LoadFromStreamAsync(stream);
     }
 
     /// <summary>One image per page; multi-page documents go into a folder.</summary>
