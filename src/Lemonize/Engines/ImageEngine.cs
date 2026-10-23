@@ -41,7 +41,7 @@ public static class ImageEngine
         target = target.ToLowerInvariant();
         if (target == "pdf")
         {
-            PdfEngine.ImagesToPdf([input], output, fitToA4: false);
+            PdfEngine.ImagesToPdf([input], output);
             return;
         }
         if (target == "svg")

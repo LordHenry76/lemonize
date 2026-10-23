@@ -83,7 +83,7 @@ File.WriteAllText(P("folder/a.txt"), "a");
 File.WriteAllText(P("folder/b.txt"), "b");
 DocumentEngine.Write(DocumentEngine.Read(P("notes.txt")), P("doc.docx"));
 DocumentEngine.Write(DocumentEngine.Read(P("notes.txt")), P("textdoc.pdf"));
-PdfEngine.ImagesToPdf([P("photo.jpg"), P("image.png"), P("qr.png")], P("pages.pdf"), fitToA4: true);
+PdfEngine.ImagesToPdf([P("photo.jpg"), P("image.png"), P("qr.png")], P("pages.pdf"));
 var zip = ArchiveEngine.Create([P("folder")], "zip", _ => { }, default);
 var tgz = ArchiveEngine.Create([P("notes.txt"), P("table.csv")], "tgz", _ => { }, default);
 Console.WriteLine("Samples ready in " + work);
@@ -202,6 +202,27 @@ await Check("PDF non bloccato dopo conversione e anteprima", async () =>
     File.Move(P("textdoc.pdf"), P("textdoc-renamed.pdf"));
     File.Move(P("textdoc-renamed.pdf"), P("textdoc.pdf"));
     return [P("textdoc.pdf")];
+});
+await Check("immagini in PDF: sempre A4 verticale", async () =>
+{
+    // A wide panorama, a tall strip and a 12 MP landscape photo: every page must be portrait A4.
+    using (var wide = new MagickImage(MagickColors.SkyBlue, 3000, 800)) wide.Write(P("wide.jpg"), MagickFormat.Jpeg);
+    using (var tall = new MagickImage(MagickColors.Orange, 600, 2400)) tall.Write(P("tall.png"), MagickFormat.Png);
+    using (var big = new MagickImage(MagickColors.SeaGreen, 4000, 3000)) big.Write(P("big.jpg"), MagickFormat.Jpeg);
+    var multi = OutputPaths.ForGroup([P("wide.jpg")], "A4-test", "pdf");
+    PdfEngine.ImagesToPdf([P("wide.jpg"), P("tall.png"), P("big.jpg")], multi);
+    var single = (await Converter.ConvertAsync(P("big.jpg"), "pdf", new Job("t", null), default))[0];
+    foreach (var pdf in new[] { multi, single })
+    {
+        using var doc = PdfSharp.Pdf.IO.PdfReader.Open(pdf, PdfSharp.Pdf.IO.PdfDocumentOpenMode.Import);
+        foreach (var page in doc.Pages)
+        {
+            var (wmm, hmm) = (page.Width.Millimeter, page.Height.Millimeter);
+            if (Math.Abs(wmm - 210) > 0.5 || Math.Abs(hmm - 297) > 0.5) throw new Exception($"pagina {wmm:0}×{hmm:0} mm");
+        }
+        Console.WriteLine($"      {Path.GetFileName(pdf)}: {doc.PageCount} pagine A4 verticali, {OutputPaths.FormatSize(new FileInfo(pdf).Length)}");
+    }
+    return [multi, single];
 });
 await Check("pdf merge", () =>
 {

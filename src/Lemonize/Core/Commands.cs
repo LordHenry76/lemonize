@@ -114,7 +114,7 @@ public static class Commands
         Enqueue(files.Count == 1 ? Loc.T("1 image → PDF") : Loc.F("{0} images → PDF", files.Count), sorted, (job, _) =>
         {
             var output = OutputPaths.ForGroup(sorted, sorted.Count == 1 ? OutputPaths.BaseName(sorted[0]) : Loc.T("Images"), "pdf");
-            PdfEngine.ImagesToPdf(sorted, output, fitToA4: true, job.Report);
+            PdfEngine.ImagesToPdf(sorted, output, job.Report);
             return Task.FromResult<IEnumerable<string>>([output]);
         });
     }

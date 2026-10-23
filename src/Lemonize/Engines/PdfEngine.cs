@@ -98,37 +98,40 @@ public static class PdfEngine
         return document.GetPages().Select(p => ContentOrderTextExtractor.GetText(p)).ToList();
     }
 
-    public static void ImagesToPdf(IReadOnlyList<string> images, string output, bool fitToA4, Action<double>? progress = null)
+    /// <summary>
+    /// One portrait A4 page per image: the image is scaled to fit inside a ~1 cm margin, centered,
+    /// never distorted. Pixels beyond 300 dpi at that size are dropped (no visible gain, much bigger PDF).
+    /// </summary>
+    public static void ImagesToPdf(IReadOnlyList<string> images, string output, Action<double>? progress = null)
     {
+        const double margin = 28; // points (~1 cm)
+        const double maxDpi = 300;
+        var pageWidth = XUnit.FromMillimeter(210).Point;
+        var pageHeight = XUnit.FromMillimeter(297).Point;
+        var boxWidth = pageWidth - 2 * margin;
+        var boxHeight = pageHeight - 2 * margin;
+
         using var document = new PdfDocument();
         for (var i = 0; i < images.Count; i++)
         {
             using var image = ImageEngine.Load(images[i]);
-            var hasAlpha = image.HasAlpha;
-            image.Format = hasAlpha ? MagickFormat.Png : MagickFormat.Jpeg;
+            var scale = Math.Min(boxWidth / image.Width, boxHeight / image.Height);
+            var w = image.Width * scale;
+            var h = image.Height * scale;
+
+            var maxPixelsWide = (uint)Math.Ceiling(w / 72 * maxDpi);
+            if (image.Width > maxPixelsWide)
+                image.Resize(new MagickGeometry(maxPixelsWide, (uint)Math.Ceiling(h / 72 * maxDpi)));
+            image.Format = image.HasAlpha ? MagickFormat.Png : MagickFormat.Jpeg;
             image.Quality = 92;
             using var stream = new MemoryStream(image.ToByteArray());
             using var ximage = XImage.FromStream(stream);
 
             var page = document.AddPage();
-            double w = image.Width * 72.0 / 150, h = image.Height * 72.0 / 150; // 150 dpi
-            if (fitToA4)
-            {
-                var landscape = image.Width > image.Height;
-                page.Width = XUnit.FromMillimeter(landscape ? 297 : 210);
-                page.Height = XUnit.FromMillimeter(landscape ? 210 : 297);
-                var margin = 28.0;
-                var scale = Math.Min((page.Width.Point - 2 * margin) / w, (page.Height.Point - 2 * margin) / h);
-                w *= scale;
-                h *= scale;
-            }
-            else
-            {
-                page.Width = XUnit.FromPoint(w);
-                page.Height = XUnit.FromPoint(h);
-            }
+            page.Width = XUnit.FromPoint(pageWidth);
+            page.Height = XUnit.FromPoint(pageHeight);
             using var gfx = XGraphics.FromPdfPage(page);
-            gfx.DrawImage(ximage, (page.Width.Point - w) / 2, (page.Height.Point - h) / 2, w, h);
+            gfx.DrawImage(ximage, (pageWidth - w) / 2, (pageHeight - h) / 2, w, h);
             progress?.Invoke((i + 1.0) / images.Count);
         }
         document.Save(output);

@@ -511,7 +511,7 @@ public static partial class DocumentEngine
             jpg.ExtractToFile(tempJpg);
             try
             {
-                if (target == "pdf") PdfEngine.ImagesToPdf([tempJpg], output, fitToA4: true);
+                if (target == "pdf") PdfEngine.ImagesToPdf([tempJpg], output);
                 else File.Copy(tempJpg, output);
             }
             finally
