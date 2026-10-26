@@ -358,7 +358,10 @@ public static class PdfEngine
             x.Elements.SetInteger("/Width", (int)image.Width);
             x.Elements.SetInteger("/Height", (int)image.Height);
             x.Elements.SetInteger("/BitsPerComponent", 8);
-            x.Elements.SetName("/ColorSpace", image.ChannelCount <= 2 ? "/DeviceGray" : "/DeviceRGB");
+            // ImageMagick writes a one-channel JPEG when every pixel is gray (typical of scans), even from an
+            // RGB image: the PDF must declare what was actually encoded, or viewers show a blank page.
+            var gray = new MagickImageInfo(encoded).ColorSpace == ColorSpace.Gray;
+            x.Elements.SetName("/ColorSpace", gray ? "/DeviceGray" : "/DeviceRGB");
         }
     }
 }

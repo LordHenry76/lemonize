@@ -320,6 +320,45 @@ await Check("CSV con NaN/Infinity → XLSX valido", () =>
     if (errors.Count > 0) throw new Exception(errors[0].Description);
     return One(o);
 });
+await Check("PDF scansione in grigio salvata come JPEG RGB: compresso non resta bianco", async () =>
+{
+    // Like many scanners: gray content stored as a 3-channel JPEG. Re-encoding comes out single-channel.
+    // ImageMagick would store gray pixels as a gray JPEG, so use the Windows encoder, which always writes three
+    // channels. Paper grain and a high quality leave recompression something to gain.
+    const int sw = 1240, sh = 1754;
+    var pixels = new byte[sw * sh * 3];
+    var random = new Random(1);
+    for (var y = 0; y < sh; y++)
+        for (var x = 0; x < sw; x++)
+        {
+            var v = (byte)(x is >= 100 and < 1140 && y is >= 100 and < 600 ? random.Next(0, 30) : random.Next(215, 255));
+            pixels[(y * sw + x) * 3] = pixels[(y * sw + x) * 3 + 1] = pixels[(y * sw + x) * 3 + 2] = v;
+        }
+    var encoder = new System.Windows.Media.Imaging.JpegBitmapEncoder { QualityLevel = 97 };
+    encoder.Frames.Add(System.Windows.Media.Imaging.BitmapFrame.Create(System.Windows.Media.Imaging.BitmapSource.Create(
+        sw, sh, 96, 96, System.Windows.Media.PixelFormats.Rgb24, null, pixels, sw * 3)));
+    using (var fs = File.Create(P("scan.jpg"))) encoder.Save(fs);
+    if (new MagickImageInfo(P("scan.jpg")).ColorSpace == ColorSpace.Gray) throw new Exception("campione non valido: JPEG già in grigio");
+    using (var doc = new PdfSharp.Pdf.PdfDocument())
+    {
+        var page = doc.AddPage();
+        using var gfx = PdfSharp.Drawing.XGraphics.FromPdfPage(page);
+        using var ximage = PdfSharp.Drawing.XImage.FromFile(P("scan.jpg"));
+        gfx.DrawImage(ximage, 0, 0, page.Width.Point, page.Height.Point);
+        doc.Save(P("scan.pdf"));
+    }
+    var outputs = new List<string>();
+    foreach (var level in new[] { CompressLevel.Light, CompressLevel.Strong })
+    {
+        var o = await CompressionEngine.CompressAsync(P("scan.pdf"), new CompressOptions(false, 0, 0, level), new Job("t", null), default);
+        using var render = new MagickImage((await PdfEngine.RenderAsync(o, [0], 400))[0]);
+        // The black rectangle covers ~23% of the page: a blank render would be almost pure white.
+        var mean = render.Statistics().GetChannel(PixelChannel.Red)!.Mean / Quantum.Max;
+        if (mean > 0.9) throw new Exception($"{level}: pagina bianca (luminosità media {mean:0.00})");
+        outputs.Add(o);
+    }
+    return outputs;
+});
 await Check(".tar.gz non propone TAR.GZ come destinazione", () =>
 {
     if (Converter.TargetsFor(P("backup.tar.gz")).Any(t => t.Id == "tgz")) throw new Exception("TAR.GZ proposto per un .tar.gz");
