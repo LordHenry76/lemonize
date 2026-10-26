@@ -170,11 +170,7 @@ public sealed class PdfOrganizerWindow : ThemedWindow
                 var prefix = _files.Count > 1 ? OutputPaths.BaseName(file) + " · " : "";
                 var items = Enumerable.Range(0, count).Select(i => new PdfPageItem(file, i, $"{prefix}p. {i + 1}")).ToList();
                 foreach (var item in items) _pages.Add(item);
-                foreach (var item in items)
-                {
-                    var png = (await PdfEngine.RenderAsync(file, [item.Index], 280))[0];
-                    item.Thumb = ImageEngine.BitmapFromBytes(png);
-                }
+                await PdfEngine.RenderEachAsync(file, null, 280, (i, png) => items[i].Thumb = ImageEngine.BitmapFromBytes(png));
             }
             UpdateStatus();
         }
@@ -244,7 +240,9 @@ public sealed class PdfOrganizerWindow : ThemedWindow
             Dialogs.Message(Loc.T("Extract pages"), Loc.T("Select the pages to extract first (Ctrl+click or Shift+click for several)."));
             return;
         }
-        Enqueue(Loc.T("Extract pages"), Refs(selected), OutputPaths.For(_files[0], "pdf", Loc.T("(extract)")));
+        var first = _files[0];
+        var suffix = Loc.T("(extract)");
+        Enqueue(Loc.T("Extract pages"), Refs(selected), () => OutputPaths.For(first, "pdf", suffix));
     }
 
     private void Save()
@@ -254,17 +252,20 @@ public sealed class PdfOrganizerWindow : ThemedWindow
             Dialogs.Error(Loc.T("Save PDF"), Loc.T("There are no pages left."));
             return;
         }
-        var output = _files.Count == 1
-            ? OutputPaths.ForToolResult(_files[0], Loc.T("(organized)"))
-            : OutputPaths.ForGroup(_files, Loc.T("Merged"), "pdf");
-        Enqueue(_files.Count == 1 ? Loc.F("Organize {0}", Path.GetFileName(_files[0])) : Loc.T("Combine PDFs"), Refs(_pages), output);
+        var files = _files;
+        var suffix = Loc.T("(organized)");
+        var merged = Loc.T("Merged");
+        Enqueue(files.Count == 1 ? Loc.F("Organize {0}", Path.GetFileName(files[0])) : Loc.T("Combine PDFs"), Refs(_pages),
+            () => files.Count == 1 ? OutputPaths.ForToolResult(files[0], suffix) : OutputPaths.ForGroup(files, merged, "pdf"));
         Close();
     }
 
-    private void Enqueue(string title, IReadOnlyList<PdfPageRef> pages, string output)
+    /// <summary>The output name is picked when the job runs, so it is reserved against other running jobs.</summary>
+    private void Enqueue(string title, IReadOnlyList<PdfPageRef> pages, Func<string> outputFor)
     {
         JobQueue.Enqueue(title, _files[0], (job, _) =>
         {
+            var output = outputFor();
             PdfEngine.Assemble(pages, output);
             job.Outputs.Add(output);
             return Task.CompletedTask;

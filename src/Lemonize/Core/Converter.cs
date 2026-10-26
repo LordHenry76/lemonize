@@ -38,7 +38,7 @@ public static class Converter
     public static List<Target> TargetsFor(string path)
     {
         var kind = FileKinds.Detect(path);
-        var ext = Normalized(FileKinds.Ext(path));
+        var ext = path.EndsWith(".tar.gz", StringComparison.OrdinalIgnoreCase) ? "tgz" : Normalized(FileKinds.Ext(path));
         var office = OfficeEngine.IsAvailable(kind) ? null : "needs Office";
         IEnumerable<Target> targets = kind switch
         {
@@ -51,7 +51,7 @@ public static class Converter
             FileKind.WordDocument => [T("pdf", ext == "docx" ? null : office), T("docx", office), T("txt"), T("epub")],
             FileKind.Text => [T("pdf"), T("docx"), T("epub")],
             FileKind.Ebook => [T("pdf"), T("docx"), T("txt")],
-            FileKind.Spreadsheet => [T("csv"), T("xlsx", office), T("pdf", office)],
+            FileKind.Spreadsheet => [T("csv", ext == "xlsx" ? null : office), T("xlsx", office), T("pdf", office)],
             FileKind.Csv => [T("xlsx"), T("pdf", office)],
             FileKind.Presentation => [T("pdf", office), T("pptx", office)],
             FileKind.AppleIWork => [T("pdf", "preview"), T("jpg", "preview")],

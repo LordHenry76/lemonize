@@ -40,6 +40,15 @@ public static class MetadataEngine
     public static async Task<List<MetaEntry>> ReadAsync(string path, CancellationToken token = default)
     {
         var entries = new List<MetaEntry>();
+        if (Directory.Exists(path))
+        {
+            // Folders are offered the editor too: name and timestamps only (FileInfo.Length would throw).
+            var dir = new DirectoryInfo(path);
+            entries.Add(new(FileGroup, "Name", dir.Name));
+            entries.Add(new(FileGroup, "Created", dir.CreationTime.ToString(DateFormat)));
+            entries.Add(new(FileGroup, "Modified", dir.LastWriteTime.ToString(DateFormat)));
+            return entries;
+        }
         var info = new FileInfo(path);
         entries.Add(new(FileGroup, "Name", info.Name));
         entries.Add(new(FileGroup, "Size", $"{OutputPaths.FormatSize(info.Length)} ({info.Length:N0} bytes)"));
@@ -212,8 +221,17 @@ public static class MetadataEngine
             File.SetCreationTime(path, created);
         }
 
-        if (values.TryGetValue("Created", out var c) && DateTime.TryParse(c, out var createdAt)) File.SetCreationTime(path, createdAt);
-        if (values.TryGetValue("Modified", out var m) && DateTime.TryParse(m, out var modifiedAt)) File.SetLastWriteTime(path, modifiedAt);
+        var isFolder = Directory.Exists(path);
+        if (values.TryGetValue("Created", out var c) && DateTime.TryParse(c, out var createdAt))
+        {
+            if (isFolder) Directory.SetCreationTime(path, createdAt);
+            else File.SetCreationTime(path, createdAt);
+        }
+        if (values.TryGetValue("Modified", out var m) && DateTime.TryParse(m, out var modifiedAt))
+        {
+            if (isFolder) Directory.SetLastWriteTime(path, modifiedAt);
+            else File.SetLastWriteTime(path, modifiedAt);
+        }
     }
 
     private static void WriteImage(string path, string temp, Dictionary<string, string> values)

@@ -444,7 +444,8 @@ public static partial class DocumentEngine
             var row = new Row { RowIndex = rowIndex++ };
             foreach (var field in fields)
             {
-                var isNumber = double.TryParse(field, NumberStyles.Float, CultureInfo.InvariantCulture, out _);
+                // "NaN"/"Infinity" parse as doubles but are not valid cell numbers: Excel would call the file corrupt.
+                var isNumber = double.TryParse(field, NumberStyles.Float, CultureInfo.InvariantCulture, out var number) && double.IsFinite(number);
                 row.Append(isNumber
                     ? new Cell { DataType = CellValues.Number, CellValue = new CellValue(field) }
                     : new Cell { DataType = CellValues.InlineString, InlineString = new InlineString(new Text(field)) });

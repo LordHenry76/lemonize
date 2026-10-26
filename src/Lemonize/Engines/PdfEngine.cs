@@ -36,9 +36,19 @@ public static class PdfEngine
     /// <summary>Renders the given pages to PNG bytes at <paramref name="width"/> pixels wide.</summary>
     public static async Task<List<byte[]>> RenderAsync(string path, IEnumerable<int> pageIndexes, uint width, CancellationToken token = default)
     {
-        var doc = await LoadWinPdfAsync(path);
         var result = new List<byte[]>();
-        foreach (var index in pageIndexes)
+        await RenderEachAsync(path, pageIndexes, width, (_, png) => result.Add(png), token);
+        return result;
+    }
+
+    /// <summary>
+    /// Renders pages one by one, handing each PNG to <paramref name="onPage"/> as soon as it is ready.
+    /// The document is loaded once, so long PDFs aren't re-read for every page.
+    /// </summary>
+    public static async Task RenderEachAsync(string path, IEnumerable<int>? pageIndexes, uint width, Action<int, byte[]> onPage, CancellationToken token = default)
+    {
+        var doc = await LoadWinPdfAsync(path);
+        foreach (var index in pageIndexes ?? Enumerable.Range(0, (int)doc.PageCount))
         {
             token.ThrowIfCancellationRequested();
             if (index < 0 || index >= doc.PageCount) continue;
@@ -49,9 +59,8 @@ public static class PdfEngine
             stream.Seek(0);
             using var ms = new MemoryStream();
             await stream.AsStreamForRead().CopyToAsync(ms, token);
-            result.Add(ms.ToArray());
+            onPage(index, ms.ToArray());
         }
-        return result;
     }
 
     /// <summary>
@@ -74,20 +83,29 @@ public static class PdfEngine
         var count = await PageCountAsync(input);
         var outputs = new List<string>();
         var folder = count > 1 ? OutputPaths.FolderFor(input, Loc.T("pages")) : null;
-        for (var i = 0; i < count; i++)
+        try
         {
-            var png = (await RenderAsync(input, [i], 2000, token))[0];
-            var output = folder is null
-                ? OutputPaths.For(input, target)
-                : Path.Combine(folder, $"{OutputPaths.BaseName(input)}-{i + 1:D3}.{target}");
-            if (target == "png") await File.WriteAllBytesAsync(output, png, token);
-            else
+            await RenderEachAsync(input, null, 2000, (i, png) =>
             {
-                using var image = new MagickImage(png);
-                ImageEngine.Save(image, output, target, Settings.Current.JpegQuality);
-            }
-            outputs.Add(output);
-            progress((i + 1.0) / count);
+                var output = folder is null
+                    ? OutputPaths.For(input, target)
+                    : Path.Combine(folder, $"{OutputPaths.BaseName(input)}-{i + 1:D3}.{target}");
+                outputs.Add(output);
+                if (target == "png") File.WriteAllBytes(output, png);
+                else
+                {
+                    using var image = new MagickImage(png);
+                    ImageEngine.Save(image, output, target, Settings.Current.JpegQuality);
+                }
+                progress((i + 1.0) / count);
+            }, token);
+        }
+        catch
+        {
+            // Don't leave a half-filled "pages" folder behind when the job fails or is canceled.
+            if (folder is not null) Directory.Delete(folder, true);
+            else foreach (var output in outputs.Where(File.Exists)) File.Delete(output);
+            throw;
         }
         return folder is null ? outputs : [folder];
     }

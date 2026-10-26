@@ -547,7 +547,8 @@ public sealed class ImageEditorWindow : ThemedWindow
             4 => "tiff",
             _ => FileKinds.Ext(_file) switch
             {
-                "svg" or "ico" or "psd" or "tga" => "png",
+                // Formats ImageEngine.Save doesn't write would come out as PNG data under the old extension.
+                "svg" or "ico" or "psd" or "tga" or "jxl" => "png",
                 "heic" or "heif" => "jpg", // HEIC is read-only
                 var same => same,
             },

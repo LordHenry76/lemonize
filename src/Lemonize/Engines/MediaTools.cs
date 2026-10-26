@@ -94,11 +94,13 @@ public static class MediaTools
         if (edit.FadeIn > 0) graph.Append($",afade=t=in:st=0:d={F(edit.FadeIn)}");
         if (edit.FadeOut > 0) graph.Append($",afade=t=out:st={F(Math.Max(0, length - edit.FadeOut))}:d={F(edit.FadeOut)}");
         if (edit.Normalize) graph.Append(",loudnorm=I=-16:TP=-1.5:LRA=11,aresample=48000");
+        // pan can't read a second channel from a mono source: it is already mono, and there is nothing to swap.
+        var stereoSource = info.AudioChannels >= 2;
         graph.Append(edit.Channels switch
         {
-            ChannelMode.Mono => ",pan=mono|c0=0.5*c0+0.5*c1",
+            ChannelMode.Mono when stereoSource => ",pan=mono|c0=0.5*c0+0.5*c1",
             ChannelMode.Stereo => ",aformat=channel_layouts=stereo",
-            ChannelMode.Swap => ",pan=stereo|c0=c1|c1=c0",
+            ChannelMode.Swap when stereoSource => ",pan=stereo|c0=c1|c1=c0",
             _ => "",
         });
         graph.Append("[out]");

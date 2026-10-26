@@ -50,9 +50,47 @@ public static class OutputPaths
         return Directory.Exists(path) ? name : Path.GetFileNameWithoutExtension(name);
     }
 
+    // Names handed out inside a job stay reserved until that job ends: two jobs running at once
+    // (e.g. "photo.heic" and "photo.jpg" → PNG) would otherwise both pick "photo.png" before either writes it.
+    private static readonly HashSet<string> Claimed = new(StringComparer.OrdinalIgnoreCase);
+    private static readonly AsyncLocal<List<string>?> JobClaims = new();
+
+    /// <summary>Reserves every name <see cref="Unique"/> returns in the current async flow until disposed.</summary>
+    public static IDisposable ClaimScope()
+    {
+        var claims = new List<string>();
+        JobClaims.Value = claims;
+        return new ClaimRelease(claims);
+    }
+
+    private sealed class ClaimRelease(List<string> claims) : IDisposable
+    {
+        public void Dispose()
+        {
+            lock (Claimed)
+            {
+                foreach (var path in claims) Claimed.Remove(path);
+                claims.Clear();
+            }
+            if (JobClaims.Value == claims) JobClaims.Value = null;
+        }
+    }
+
+    private static bool Taken(string path) => File.Exists(path) || Directory.Exists(path) || Claimed.Contains(path);
+
     public static string Unique(string path)
     {
-        if (!File.Exists(path) && !Directory.Exists(path)) return path;
+        lock (Claimed)
+        {
+            var result = FirstFree(path);
+            if (JobClaims.Value is { } claims && Claimed.Add(result)) claims.Add(result);
+            return result;
+        }
+    }
+
+    private static string FirstFree(string path)
+    {
+        if (!Taken(path)) return path;
         var dir = Path.GetDirectoryName(path)!;
         var name = Path.GetFileNameWithoutExtension(path);
         var ext = Path.GetExtension(path);
@@ -64,7 +102,7 @@ public static class OutputPaths
         for (var i = 2; ; i++)
         {
             var candidate = Path.Combine(dir, $"{name} ({i}){ext}");
-            if (!File.Exists(candidate) && !Directory.Exists(candidate)) return candidate;
+            if (!Taken(candidate)) return candidate;
         }
     }
 
@@ -81,8 +119,24 @@ public static class OutputPaths
     /// <summary>Writes through a temp file so a failed tool never leaves a half-written original.</summary>
     public static void CommitTemp(string tempFile, string destination)
     {
-        if (File.Exists(destination)) File.Replace(tempFile, destination, null);
-        else File.Move(tempFile, destination);
+        if (!File.Exists(destination))
+        {
+            File.Move(tempFile, destination);
+            return;
+        }
+        // File.Replace only works within one volume and temp files live in %TEMP%, so originals on
+        // another drive, a USB stick or a network share need the result staged next to them first.
+        var staged = Path.Combine(Path.GetDirectoryName(Path.GetFullPath(destination))!, $"~lemonize-{Guid.NewGuid():N}.tmp");
+        File.Move(tempFile, staged);
+        try
+        {
+            File.Replace(staged, destination, null);
+        }
+        catch
+        {
+            if (File.Exists(staged)) File.Delete(staged);
+            throw;
+        }
     }
 
     public static string FormatSize(long bytes)

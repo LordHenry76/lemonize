@@ -45,7 +45,11 @@ public static class MediaEngine
                       CopyableVideo.Contains(info.VideoCodec ?? "") &&
                       (!info.HasAudio || CopyableAudio.Contains(info.AudioCodec ?? "") || target == "mkv");
         if (canCopy)
-            return ["-map", "0:v:0", "-map", "0:a?", "-c", "copy", "-map_metadata", "0", .. Faststart(target)];
+        {
+            // Apple players (QuickTime, iPhone, Photos) only open HEVC in MP4/MOV when it is tagged hvc1.
+            string[] tag = info.VideoCodec == "hevc" && target is "mp4" or "mov" ? ["-tag:v", "hvc1"] : [];
+            return ["-map", "0:v:0", "-map", "0:a?", "-c", "copy", .. tag, "-map_metadata", "0", .. Faststart(target)];
+        }
 
         var evenSize = new[] { "-vf", "scale=trunc(iw/2)*2:trunc(ih/2)*2" };
         string[] video = target switch

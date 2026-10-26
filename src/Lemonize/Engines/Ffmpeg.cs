@@ -88,7 +88,30 @@ public static class Ffmpeg
         // "-v error" keeps stderr to actual problems so failures can quote the real cause.
         var all = new List<string> { "-hide_banner", "-nostdin", "-y", "-v", "error", "-progress", "pipe:1", "-nostats" };
         all.AddRange(args);
+        // The output always comes last. Jobs list their outputs only once they succeed, so a failed or
+        // canceled run has to remove its own half-written file (unless it was there before, e.g. a temp copy).
+        var output = all[^1];
+        var removeOnFailure = output != "NUL" && !output.StartsWith("pipe:", StringComparison.Ordinal) && !File.Exists(output);
+        try
+        {
+            await RunCoreAsync(all, duration, progress, token);
+        }
+        catch when (removeOnFailure)
+        {
+            try
+            {
+                if (File.Exists(output)) File.Delete(output);
+            }
+            catch (IOException)
+            {
+                // Best effort.
+            }
+            throw;
+        }
+    }
 
+    private static async Task RunCoreAsync(List<string> all, double duration, Action<double>? progress, CancellationToken token)
+    {
         var psi = NewStartInfo(Exe, all);
         using var process = new Process { StartInfo = psi };
         var stderr = new StringBuilder();

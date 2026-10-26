@@ -263,6 +263,69 @@ await Check("audio join", async () =>
     return [await MediaTools.JoinAsync([P("audio.wav"), mp3], _ => { }, default)];
 });
 
+await Check("nomi di output riservati tra lavori in parallelo", () =>
+{
+    string a, b;
+    using (OutputPaths.ClaimScope())
+    {
+        // Two jobs converting "photo.heic" and "photo.jpg" both ask for "photo.webp" before either writes it.
+        a = OutputPaths.For(P("photo.jpg"), "webp");
+        b = OutputPaths.For(P("photo.jpg"), "webp");
+    }
+    if (a == b) throw new Exception($"stesso nome due volte: {a}");
+    if (OutputPaths.For(P("photo.jpg"), "webp") != a) throw new Exception("prenotazione non rilasciata a fine lavoro");
+    return One(P("photo.jpg"));
+});
+await Check("ffmpeg annullato: niente file parziale", async () =>
+{
+    var output = P("canceled.mp4");
+    using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(2));
+    try
+    {
+        await Ffmpeg.RunAsync(["-f", "lavfi", "-i", "testsrc=duration=600:size=1280x720", "-c:v", "libx264", "-preset", "veryslow", output], 600, null, cts.Token);
+        throw new Exception("la codifica doveva essere annullata");
+    }
+    catch (OperationCanceledException)
+    {
+    }
+    if (File.Exists(output)) throw new Exception("file parziale rimasto su disco");
+    return [P("video.mp4")];
+});
+await Check("audio edit mono su sorgente mono: volume invariato", async () =>
+{
+    await RunFfmpeg("-f", "lavfi", "-i", "sine=duration=2", "-ac", "1", P("mono.wav"));
+    var edited = await MediaTools.EditAudioAsync(P("mono.wav"), new AudioEdit(0, 2, [], false, ChannelMode.Mono, 0, 0), _ => { }, default);
+    double Peak(string f)
+    {
+        var (_, _, err) = Ffmpeg.RunCaptureAsync(Ffmpeg.Exe, ["-hide_banner", "-i", f, "-af", "volumedetect", "-f", "null", "NUL"], default).GetAwaiter().GetResult();
+        var line = err.Split('\n').First(l => l.Contains("max_volume"));
+        return double.Parse(line.Split(':')[1].Replace("dB", "").Trim(), System.Globalization.CultureInfo.InvariantCulture);
+    }
+    if (Math.Abs(Peak(edited) - Peak(P("mono.wav"))) > 1) throw new Exception($"volume cambiato: {Peak(P("mono.wav"))} → {Peak(edited)} dB");
+    return [edited];
+});
+await Check("metadati di una cartella", async () =>
+{
+    var entries = await MetadataEngine.ReadAsync(P("folder"));
+    if (!entries.Any(e => e.Key == "Created")) throw new Exception("data di creazione mancante");
+    return [P("folder")];
+});
+await Check("CSV con NaN/Infinity → XLSX valido", () =>
+{
+    File.WriteAllText(P("special.csv"), "a,b,c\nNaN,Infinity,12\n");
+    var o = P("special.xlsx");
+    DocumentEngine.CsvToXlsx(P("special.csv"), o);
+    using var doc = DocumentFormat.OpenXml.Packaging.SpreadsheetDocument.Open(o, false);
+    var errors = new DocumentFormat.OpenXml.Validation.OpenXmlValidator().Validate(doc).ToList();
+    if (errors.Count > 0) throw new Exception(errors[0].Description);
+    return One(o);
+});
+await Check(".tar.gz non propone TAR.GZ come destinazione", () =>
+{
+    if (Converter.TargetsFor(P("backup.tar.gz")).Any(t => t.Id == "tgz")) throw new Exception("TAR.GZ proposto per un .tar.gz");
+    return One(P("photo.jpg"));
+});
+
 if (args.Contains("--render-wheels")) WheelRender.Run(work, [
     ("audio-convert", [P("audio.wav")], WheelMode.Convert),
     ("image-tools", [P("photo.jpg")], WheelMode.Tools),

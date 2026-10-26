@@ -233,8 +233,14 @@ public static class Commands
             try
             {
                 var target = OutputPaths.Unique(Path.Combine(destination, Path.GetFileName(file.TrimEnd(Path.DirectorySeparatorChar))));
-                if (Directory.Exists(file)) Directory.Move(file, target);
-                else File.Move(file, target);
+                if (!Directory.Exists(file)) File.Move(file, target);
+                else if (SameVolume(file, target)) Directory.Move(file, target);
+                else
+                {
+                    // Directory.Move can't cross drives: copy everything over, then remove the original.
+                    CopyDirectory(file, target);
+                    Directory.Delete(file, true);
+                }
             }
             catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
             {
@@ -242,6 +248,18 @@ public static class Commands
             }
         }
         if (errors.Count > 0) Dialogs.Error(Loc.T("Some items were not moved"), string.Join("\n", errors));
+    }
+
+    private static bool SameVolume(string a, string b) =>
+        string.Equals(Path.GetPathRoot(Path.GetFullPath(a)), Path.GetPathRoot(Path.GetFullPath(b)), StringComparison.OrdinalIgnoreCase);
+
+    private static void CopyDirectory(string source, string destination)
+    {
+        Directory.CreateDirectory(destination);
+        foreach (var file in Directory.EnumerateFiles(source))
+            File.Copy(file, Path.Combine(destination, Path.GetFileName(file)));
+        foreach (var dir in Directory.EnumerateDirectories(source))
+            CopyDirectory(dir, Path.Combine(destination, Path.GetFileName(dir)));
     }
 
     private static void OpenTerminal(string path)

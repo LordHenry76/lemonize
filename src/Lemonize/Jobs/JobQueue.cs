@@ -118,6 +118,7 @@ public static class JobQueue
     private static async Task RunAsync(Job job, JobWork work)
     {
         var slots = _slots;
+        using var claims = OutputPaths.ClaimScope();
         try
         {
             await slots.WaitAsync(job.Token);
