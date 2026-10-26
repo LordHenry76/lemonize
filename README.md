@@ -59,6 +59,9 @@ dotnet run --project src/Lemonize
 dotnet run --project tests/Lemonize.Smoke -- C:\temp\lemonize-smoke
 # aggiungi --render-wheels per salvare immagini PNG delle ruote, --italian per provare in italiano
 
+# mockup per il sito: finestre e ruote vere, in italiano, PNG trasparenti in mockups\ (non versionata)
+dotnet run --project tools/Lemonize.Mockups
+
 # installer: dist\Lemonize-Setup-<versione>.exe (serve Inno Setup 6: winget install JRSoftware.InnoSetup --scope user)
 .\publish.ps1
 ```

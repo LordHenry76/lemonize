@@ -102,8 +102,10 @@ public sealed class CompressWindow : ThemedWindow
             Style = (Style)FindResource("ToolToggle"), GroupName = "level", IsChecked = selected,
             Margin = new Thickness(0, 0, 6, 0), HorizontalContentAlignment = HorizontalAlignment.Center,
         };
-        var title = new TextBlock { Text = Loc.T(label), FontWeight = FontWeights.SemiBold, HorizontalAlignment = HorizontalAlignment.Center };
-        var sub = new TextBlock { Text = Loc.T(caption), FontSize = 11, Opacity = 0.75, HorizontalAlignment = HorizontalAlignment.Center };
+        // English on purpose: Loc.Apply translates the window once it loads. Translating here too would run
+        // twice, and "Medium" → "Media" would become "Multimedia" (the media metadata group).
+        var title = new TextBlock { Text = label, FontWeight = FontWeights.SemiBold, HorizontalAlignment = HorizontalAlignment.Center };
+        var sub = new TextBlock { Text = caption, FontSize = 11, Opacity = 0.75, HorizontalAlignment = HorizontalAlignment.Center };
         // Follow the toggle's foreground (dark text on the lemon highlight when selected).
         foreach (var text in new[] { title, sub })
             text.SetBinding(TextBlock.ForegroundProperty, new System.Windows.Data.Binding(nameof(Foreground)) { Source = button });

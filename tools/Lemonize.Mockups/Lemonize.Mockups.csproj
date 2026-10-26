@@ -1,0 +1,18 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>WinExe</OutputType>
+    <TargetFramework>net8.0-windows10.0.19041.0</TargetFramework>
+    <SupportedOSPlatformVersion>10.0.19041.0</SupportedOSPlatformVersion>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <UseWPF>true</UseWPF>
+  </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\..\src\Lemonize\Lemonize.csproj" />
+  </ItemGroup>
+  <ItemGroup>
+    <!-- The windows load "pack://application:,,,/Assets/…", which resolves against the running exe. -->
+    <Resource Include="..\..\src\Lemonize\Assets\lemonize.png" Link="Assets\lemonize.png" />
+    <Resource Include="..\..\src\Lemonize\Assets\lemonize.ico" Link="Assets\lemonize.ico" />
+  </ItemGroup>
+</Project>

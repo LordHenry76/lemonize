@@ -30,8 +30,10 @@ public static class ShellThumbnails
             var preview = FileKinds.Detect(path) switch
             {
                 FileKind.Image or FileKind.AnimatedImage => ImagePreview(path, size),
-                FileKind.Pdf => FromPng(PdfEngine.RenderAsync(path, [0], (uint)(size * 2)).GetAwaiter().GetResult().FirstOrDefault(), size),
-                FileKind.Video when ToolLocator.Ffmpeg is not null => FromPng(Ffmpeg.FrameAsync(path, 1, size * 2).GetAwaiter().GetResult(), size),
+                // Task.Run: waiting here on the UI thread would otherwise deadlock, since the awaits inside
+                // want to resume on the very thread that is blocked waiting for them.
+                FileKind.Pdf => FromPng(Task.Run(() => PdfEngine.RenderAsync(path, [0], (uint)(size * 2))).GetAwaiter().GetResult().FirstOrDefault(), size),
+                FileKind.Video when ToolLocator.Ffmpeg is not null => FromPng(Task.Run(() => Ffmpeg.FrameAsync(path, 1, size * 2)).GetAwaiter().GetResult(), size),
                 _ => null,
             };
             if (preview is not null) return preview;

@@ -69,7 +69,9 @@ public sealed class FloatWindow : Window
                 Background = (Brush)FindResource("Surface2"), CornerRadius = new CornerRadius(8),
                 RenderTransform = new RotateTransform(-8, 42, 42),
             });
-        preview.Children.Add(new Image { Source = ShellThumbnails.Get(_files[0], 128), Stretch = Stretch.Uniform });
+        var thumbnail = new Image { Stretch = Stretch.Uniform };
+        preview.Children.Add(thumbnail);
+        LoadPreview(thumbnail, _files[0]);
         stack.Children.Add(preview);
         stack.Children.Add(new TextBlock
         {
@@ -97,6 +99,9 @@ public sealed class FloatWindow : Window
         card.Child = grid;
         Content = card;
     }
+
+    /// <summary>Previews of videos and PDFs take a moment: the card shows up right away and the picture follows.</summary>
+    private static async void LoadPreview(Image target, string file) => target.Source = await ShellThumbnails.GetAsync(file, 128);
 
     protected override void OnMouseLeftButtonDown(MouseButtonEventArgs e)
     {

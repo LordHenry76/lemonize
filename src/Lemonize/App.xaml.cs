@@ -267,7 +267,7 @@ public partial class App
     {
         try
         {
-            File.AppendAllText(Path.Combine(AppPaths.LocalData, "error.log"), $"[{DateTime.Now:u}] {ex}\n\n");
+            File.AppendAllText(Path.Combine(AppPaths.LocalData, "error.log"), $"[{DateTime.Now:yyyy-MM-dd HH:mm:ss}] {ex}\n\n");
         }
         catch (IOException)
         {
