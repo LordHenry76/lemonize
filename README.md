@@ -64,6 +64,9 @@ dotnet run --project tools/Lemonize.Mockups
 
 # installer: dist\Lemonize-Setup-<versione>.exe (serve Inno Setup 6: winget install JRSoftware.InnoSetup --scope user)
 .\publish.ps1
+
+# release su GitHub: tag v<versione> + installer, note prese dal commit "(<versione>)" già pushato (serve gh)
+.\release.ps1
 ```
 
 
