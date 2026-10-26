@@ -4,11 +4,14 @@ using System.IO;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Data;
+using System.Windows.Documents;
 using System.Windows.Input;
 using System.Windows.Media;
 using System.Windows.Media.Imaging;
+using System.Windows.Threading;
 using Lemonize.Core;
 using Lemonize.Engines;
+using Lemonize.Interop;
 using Lemonize.Jobs;
 
 namespace Lemonize.UI;
@@ -60,6 +63,8 @@ public sealed class PdfOrganizerWindow : ThemedWindow
     private readonly TextBlock _status = new() { VerticalAlignment = VerticalAlignment.Center };
     private PdfPageItem? _dragItem;
     private Point _dragStart;
+    private DragGhost? _ghost;
+    private int _insertAt = -1;
 
     public PdfOrganizerWindow(IReadOnlyList<string> files)
     {
@@ -99,6 +104,11 @@ public sealed class PdfOrganizerWindow : ThemedWindow
             _dragItem = (e.OriginalSource as FrameworkElement)?.DataContext as PdfPageItem;
         };
         _list.PreviewMouseMove += OnListMouseMove;
+        _list.DragOver += (_, e) =>
+        {
+            e.Effects = e.Data.GetDataPresent(typeof(PdfPageItem)) ? DragDropEffects.Move : DragDropEffects.None;
+            e.Handled = true;
+        };
         _list.Drop += OnListDrop;
 
         var root = new DockPanel();
@@ -217,16 +227,169 @@ public sealed class PdfOrganizerWindow : ThemedWindow
         if (Math.Abs(p.X - _dragStart.X) < 8 && Math.Abs(p.Y - _dragStart.Y) < 8) return;
         var item = _dragItem;
         _dragItem = null;
-        DragDrop.DoDragDrop(_list, new DataObject(typeof(PdfPageItem), item), DragDropEffects.Move);
+        if (_list.ItemContainerGenerator.ContainerFromItem(item) is not ListBoxItem container
+            || AdornerLayer.GetAdornerLayer(_list) is not { } layer)
+        {
+            DragDrop.DoDragDrop(_list, new DataObject(typeof(PdfPageItem), item), DragDropEffects.Move);
+            return;
+        }
+
+        // A see-through copy of the page follows the pointer, held where it was grabbed; the page itself
+        // stays dimmed in place, and a bar shows where it will land.
+        _ghost = new DragGhost(_list, Snapshot(container), _dragStart - BoundsOf(container).TopLeft, (Brush)FindResource("Accent"));
+        layer.Add(_ghost);
+        container.Opacity = 0.35;
+        // A timer tracks the pointer: during a drag WPF reports no mouse moves, and the list must keep
+        // scrolling while the pointer rests near its edge.
+        var timer = new DispatcherTimer(TimeSpan.FromMilliseconds(16), DispatcherPriority.Input, (_, _) => TrackDrag(), Dispatcher);
+        TrackDrag();
+        timer.Start();
+        try
+        {
+            DragDrop.DoDragDrop(_list, new DataObject(typeof(PdfPageItem), item), DragDropEffects.Move);
+        }
+        finally
+        {
+            timer.Stop();
+            layer.Remove(_ghost);
+            _ghost = null;
+            _insertAt = -1;
+            container.Opacity = 1;
+            if (_list.ItemContainerGenerator.ContainerFromItem(item) is ListBoxItem moved) moved.Opacity = 1;
+        }
+    }
+
+    private void TrackDrag()
+    {
+        if (_ghost is null) return;
+        var p = _list.PointFromScreen(Native.CursorPixels());
+        _ghost.MoveTo(p);
+        if (p.X < 0 || p.Y < 0 || p.X >= _list.ActualWidth || p.Y >= _list.ActualHeight)
+        {
+            _insertAt = -1;
+            _ghost.ShowBar(null);
+            return;
+        }
+        AutoScroll(p);
+        (_insertAt, var bar) = InsertionAt(p);
+        _ghost.ShowBar(bar);
+    }
+
+    /// <summary>Scrolls when the pointer is near the top or bottom edge, faster the closer it gets.</summary>
+    private void AutoScroll(Point p)
+    {
+        const double zone = 48;
+        if (FindChild<ScrollViewer>(_list) is not { } scroller) return;
+        var step = p.Y < zone ? p.Y - zone : p.Y > _list.ActualHeight - zone ? p.Y - (_list.ActualHeight - zone) : 0;
+        if (step != 0) scroller.ScrollToVerticalOffset(scroller.VerticalOffset + step / 2);
+    }
+
+    /// <summary>
+    /// Where a page dropped at <paramref name="p"/> goes: before the page under the pointer when on its left
+    /// half, after it when on the right half. Returns the insertion index and the bar that marks it.
+    /// </summary>
+    private (int Index, Rect Bar) InsertionAt(Point p)
+    {
+        var slots = _pages
+            .Select((page, i) => (Index: i, Bounds: _list.ItemContainerGenerator.ContainerFromItem(page) is ListBoxItem c ? BoundsOf(c) : Rect.Empty))
+            .Where(s => !s.Bounds.IsEmpty).ToList();
+        if (slots.Count == 0) return (_pages.Count, Rect.Empty);
+        // The row under the pointer, or the nearest one when it's between rows or below the last.
+        var rowTop = slots.MinBy(s => p.Y < s.Bounds.Top ? s.Bounds.Top - p.Y : p.Y > s.Bounds.Bottom ? p.Y - s.Bounds.Bottom : 0).Bounds.Top;
+        var row = slots.Where(s => Math.Abs(s.Bounds.Top - rowTop) < 1).ToList();
+        const double width = 3;
+        foreach (var slot in row)
+            if (p.X < slot.Bounds.Left + slot.Bounds.Width / 2)
+                return (slot.Index, new Rect(slot.Bounds.Left - width / 2, slot.Bounds.Top + 6, width, slot.Bounds.Height - 12));
+        var last = row[^1];
+        return (last.Index + 1, new Rect(last.Bounds.Right - width / 2, last.Bounds.Top + 6, width, last.Bounds.Height - 12));
+    }
+
+    private Rect BoundsOf(FrameworkElement element) =>
+        element.TransformToAncestor(_list).TransformBounds(new Rect(element.RenderSize));
+
+    private static BitmapSource Snapshot(FrameworkElement element)
+    {
+        var dpi = VisualTreeHelper.GetDpi(element);
+        var bitmap = new RenderTargetBitmap(
+            (int)Math.Ceiling(element.ActualWidth * dpi.DpiScaleX), (int)Math.Ceiling(element.ActualHeight * dpi.DpiScaleY),
+            dpi.PixelsPerInchX, dpi.PixelsPerInchY, PixelFormats.Pbgra32);
+        // Through a brush: rendering the element directly would include its offset inside the list.
+        var visual = new DrawingVisual();
+        using (var dc = visual.RenderOpen())
+            dc.DrawRectangle(new VisualBrush(element), null, new Rect(element.RenderSize));
+        bitmap.Render(visual);
+        bitmap.Freeze();
+        return bitmap;
+    }
+
+    private static T? FindChild<T>(DependencyObject parent) where T : DependencyObject
+    {
+        for (var i = 0; i < VisualTreeHelper.GetChildrenCount(parent); i++)
+        {
+            var child = VisualTreeHelper.GetChild(parent, i);
+            if (child is T found) return found;
+            if (FindChild<T>(child) is { } nested) return nested;
+        }
+        return null;
     }
 
     private void OnListDrop(object sender, DragEventArgs e)
     {
         if (e.Data.GetData(typeof(PdfPageItem)) is not PdfPageItem dragged) return;
-        var target = (e.OriginalSource as FrameworkElement)?.DataContext as PdfPageItem;
+        Reorder(dragged, _insertAt >= 0 ? _insertAt : InsertionAt(e.GetPosition(_list)).Index);
+    }
+
+    /// <summary>Moves a page so that it lands at insertion index <paramref name="to"/> (0 = first, Count = last).</summary>
+    private void Reorder(PdfPageItem dragged, int to)
+    {
         var from = _pages.IndexOf(dragged);
-        var to = target is null ? _pages.Count - 1 : _pages.IndexOf(target);
-        if (from >= 0 && to >= 0 && from != to) _pages.Move(from, to);
+        // Taking the page out first shifts every later slot back by one.
+        if (to > from) to--;
+        if (from >= 0 && to < _pages.Count && from != to) _pages.Move(from, to);
+    }
+
+    /// <summary>The dragged page at 80% opacity under the pointer, and the insertion bar.</summary>
+    private sealed class DragGhost : Adorner
+    {
+        private readonly BitmapSource _image;
+        private readonly Vector _grab;
+        private readonly Brush _barBrush;
+        private Point _pointer;
+        private Rect? _bar;
+
+        public DragGhost(UIElement adorned, BitmapSource image, Vector grab, Brush barBrush) : base(adorned)
+        {
+            _image = image;
+            _grab = grab;
+            _barBrush = barBrush;
+            IsHitTestVisible = false;
+        }
+
+        public void MoveTo(Point pointer)
+        {
+            if (pointer == _pointer) return;
+            _pointer = pointer;
+            InvalidateVisual();
+        }
+
+        public void ShowBar(Rect? bar)
+        {
+            if (bar is { IsEmpty: true }) bar = null;
+            if (bar == _bar) return;
+            _bar = bar;
+            InvalidateVisual();
+        }
+
+        protected override void OnRender(DrawingContext dc)
+        {
+            var dpi = VisualTreeHelper.GetDpi(this);
+            dc.PushOpacity(0.8);
+            dc.DrawImage(_image, new Rect(_pointer - _grab, new Size(_image.PixelWidth / dpi.DpiScaleX, _image.PixelHeight / dpi.DpiScaleY)));
+            dc.Pop();
+            // On top of the page, so the landing spot stays visible under it.
+            if (_bar is { } bar) dc.DrawRoundedRectangle(_barBrush, null, bar, 1.5, 1.5);
+        }
     }
 
     private IReadOnlyList<PdfPageRef> Refs(IEnumerable<PdfPageItem> pages) =>
