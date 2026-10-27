@@ -1,86 +1,89 @@
 # Lemonize
 
-Convertitore di file per Windows ispirato a *Tangerine* per macOS. Trascini file da Esplora file o dal desktop, tieni premuto un tasto e una ruota di scelte si apre attorno al puntatore: rilasci il file su una voce e il risultato viene salvato accanto all'originale. Tutto gira in locale e nessun file viene caricato online.
+**English** · [Italiano](README.it.md)
 
-| Tasto durante il trascinamento | Ruota | Contenuto |
+A file converter for Windows inspired by *Tangerine* for macOS. Drag files from File Explorer or the desktop, hold a key and a wheel of choices opens around the pointer: drop the file on an item and the result is saved next to the original. Everything runs locally and no file is ever uploaded.
+
+| Key while dragging | Wheel | Contents |
 |---|---|---|
-| **Shift** | Converti | JPEG, PNG, WebP, TIFF, BMP, GIF, SVG, PDF, ICO, AVIF · MP4, MOV, MKV, AVI, WMV, WebM, GIF · MP3, M4A, WAV, FLAC, OGG, Opus, AIFF · PDF, TXT, DOCX, EPUB, CSV, XLSX, PPTX · SRT, VTT · ZIP, TAR, TAR.GZ, GZIP, estrai RAR/7z |
-| **Alt** | Strumenti | Comprimi (a percentuale o a dimensione esatta), editor immagini (ritaglio, regolazioni, annotazioni, oscuramento, pixelatura), editor video (taglio, ritaglio, velocità, divisione, fotogramma), editor audio (taglio, bip, normalizzazione, canali, dissolvenze), unisci, PDF (unisci, dividi, riordina/ruota/elimina pagine, immagini→PDF), scansione documenti (foto di fogli raddrizzate e pulite in PDF A4; documenti d'identità con fronte e retro a grandezza reale su un A4), collage, metadati (vedi/modifica/rimuovi), lettura QR/codici a barre |
-| **Ctrl** | Azioni | Condividi (menu Condividi di Windows), Float (file fluttuanti), Copia, Sposta in…, Copia percorso, Terminale |
+| **Shift** | Convert | JPEG, PNG, WebP, TIFF, BMP, GIF, SVG, PDF, ICO, AVIF · MP4, MOV, MKV, AVI, WMV, WebM, GIF · MP3, M4A, WAV, FLAC, OGG, Opus, AIFF · PDF, TXT, DOCX, EPUB, CSV, XLSX, PPTX · SRT, VTT · ZIP, TAR, TAR.GZ, GZIP, extract RAR/7z |
+| **Alt** | Tools | Compress (by percentage or to an exact size), image editor (crop, adjustments, annotations, redaction, pixelation), video editor (trim, crop, speed, split, frame grab), audio editor (trim, bleep, normalize, channels, fades), join, PDF (merge, split, reorder/rotate/delete pages, images→PDF), document scanning (photos of paper sheets straightened and cleaned into an A4 PDF; ID cards with front and back at real size on one A4 page), collage, metadata (view/edit/remove), QR/barcode reading |
+| **Ctrl** | Actions | Share (Windows Share menu), Float (floating files), Copy, Move to…, Copy path, Terminal |
 
-Altri modi di usarla: la finestra principale (trascina oppure clicca per scegliere i file) e, se attivato nelle impostazioni, la voce **Lemonize…** nel menu del tasto destro di Esplora file. La ruota si usa anche con il mouse (clic) e con Tab/Esc.
+Other ways to use it: the main window (drag files onto it or click to pick them) and, when enabled in the settings, the **Lemonize…** entry in File Explorer's right-click menu. The wheel also works with the mouse (click) and with Tab/Esc.
 
-## Lingue
+## Languages
 
-Italiano e inglese. Di default la lingua segue quella di Windows. Si può forzare in *Impostazioni → Lingua*; la modifica vale dal riavvio successivo.
-Le traduzioni sono in `Core/Loc.cs`: il testo inglese fa da chiave e c'è un dizionario italiano. I testi fissi delle finestre vengono tradotti in automatico all'apertura (`Loc.Apply`); quelli dinamici passano da `Loc.T`/`Loc.F`. Per aggiungere una lingua basta aggiungere un dizionario.
+English and Italian. By default the language follows Windows; it can be forced in *Settings → Language* and the change applies from the next restart.
+Translations live in `Core/Loc.cs`: the English text is the key and there is an Italian dictionary. Static window text is translated automatically when a window opens (`Loc.Apply`); dynamic text goes through `Loc.T`/`Loc.F`. Adding a language only takes another dictionary.
 
-## Requisiti
+## Requirements
 
-- Windows 10 2004 (19041) o successivo, x64.
-- FFmpeg, Ghostscript e Pandoc sono inclusi (cartelle accanto a `Lemonize.exe`).
-- Facoltativi:
-  - **Microsoft Office** o **LibreOffice** per DOC/XLS/PPT/ODT → PDF e tra formati Office.
+- Windows 10 2004 (19041) or later, x64.
+- FFmpeg, Ghostscript and Pandoc are bundled (folders next to `Lemonize.exe`).
+- Optional:
+  - **Microsoft Office** or **LibreOffice** for DOC/XLS/PPT/ODT → PDF and between Office formats.
 
-## Struttura
+## Layout
 
 ```
 src/Lemonize/
-  App.xaml(.cs)        avvio, istanza singola (named pipe), icona nell'area di notifica, hook globale del mouse
-  Core/                impostazioni, tipi di file, catalogo conversioni (Converter), comandi delle ruote,
-                       percorsi di output, licenza, integrazione con Windows, installer di FFmpeg
+  App.xaml(.cs)        startup, single instance (named pipe), notification-area icon, global mouse hook
+  Core/                settings, file kinds, conversion catalog (Converter), wheel commands,
+                       output paths, license, Windows integration, FFmpeg installer
   Engines/             Image (Magick.NET), Media/MediaTools/Ffmpeg, Pdf (PDFsharp, PdfPig, Windows.Data.Pdf),
                        Document (OpenXML, EPUB), Office (COM/LibreOffice), Archive, Subtitle,
-                       Metadata, Compression, Qr (ZXing)
-  Interop/             hook del mouse, miniature di Esplora file, menu Condividi, P/Invoke
-  Jobs/                coda dei lavori con avanzamento e annullamento
-  UI/                  ruota, finestra principale, avanzamento, impostazioni, editor e dialoghi
-tests/Lemonize.Smoke/  test end-to-end: genera file di esempio ed esegue ogni conversione e strumento
-third_party/ghostscript/ Ghostscript 10.08 (solo gswin64c.exe + gsdll64.dll), copiato accanto a Lemonize.exe
-third_party/pandoc/     Pandoc 3.12.1 (pandoc.exe), copiato accanto a Lemonize.exe
-third_party/ffmpeg/     FFmpeg 9.0 essentials (ffmpeg.exe + ffprobe.exe), copiato accanto a Lemonize.exe
-installer/             script Inno Setup per Lemonize-Setup.exe
+                       Metadata, Compression, Qr (ZXing), Scan (document and ID card scanning)
+  Interop/             mouse hook, File Explorer thumbnails, Share menu, P/Invoke
+  Jobs/                job queue with progress and cancellation
+  UI/                  wheel, main window, progress, settings, editors and dialogs
+tests/Lemonize.Smoke/  end-to-end tests: generates sample files and runs every conversion and tool
+third_party/ghostscript/ Ghostscript 10.08 (gswin64c.exe + gsdll64.dll only), copied next to Lemonize.exe
+third_party/pandoc/     Pandoc 3.12.1 (pandoc.exe), copied next to Lemonize.exe
+third_party/ffmpeg/     FFmpeg 9.0 essentials (ffmpeg.exe + ffprobe.exe), copied next to Lemonize.exe
+installer/             Inno Setup script for Lemonize-Setup.exe
 ```
 
-### Come funziona la ruota
+### How the wheel works
 
-Un hook a basso livello (`WH_MOUSE_LL`) si accorge che stai trascinando con Shift, Alt o Ctrl premuto (non si usano Shift+Alt né Ctrl+Shift, che in Windows cambiano la lingua di input). A quel punto sotto il puntatore compare una finestra trasparente che fa da *drop target*. Diventa visibile solo quando Windows le consegna davvero dei file (`DragEnter` con `FileDrop`), così trascinare testo o selezionare con Shift non mostra nulla. Il rilascio su un settore avvia il comando. Uscire dalla ruota o rilasciare altrove la chiude.
+A low-level hook (`WH_MOUSE_LL`) notices that you are dragging with Shift, Alt or Ctrl held down (Shift+Alt and Ctrl+Shift are not used, since Windows uses them to switch the input language). A transparent window then appears under the pointer as a *drop target*. It only becomes visible once Windows actually hands it files (`DragEnter` with `FileDrop`), so dragging text or selecting with Shift shows nothing. Dropping on a sector runs the command; leaving the wheel or dropping elsewhere closes it.
 
-## Sviluppo
+## Development
 
 ```powershell
-# una volta sola dopo il clone: scarica FFmpeg, Ghostscript e Pandoc in third_party\ (serve 7-Zip)
-.	oolsetch-third-party.ps1
+# once after cloning: downloads FFmpeg, Ghostscript and Pandoc into third_party\ (needs 7-Zip)
+.\tools\fetch-third-party.ps1
 
 dotnet build Lemonize.sln
 dotnet run --project src/Lemonize
 
-# test end-to-end (serve FFmpeg)
+# end-to-end tests (needs FFmpeg)
 dotnet run --project tests/Lemonize.Smoke -- C:\temp\lemonize-smoke
-# aggiungi --render-wheels per salvare immagini PNG delle ruote, --italian per provare in italiano
+# add --render-wheels to save PNG images of the wheels, --italian to test in Italian
 
-# mockup per il sito: finestre e ruote vere, in italiano, PNG trasparenti in mockups\ (non versionata)
+# mockups for the website: the real windows and wheels, in Italian, as transparent PNGs in mockups\ (not versioned)
 dotnet run --project tools/Lemonize.Mockups
 
-# installer: dist\Lemonize-Setup-<versione>.exe (serve Inno Setup 6: winget install JRSoftware.InnoSetup --scope user)
+# installer: dist\Lemonize-Setup-<version>.exe (needs Inno Setup 6: winget install JRSoftware.InnoSetup --scope user)
 .\publish.ps1
 
-# release su GitHub: tag v<versione> + installer, note prese dal commit "(<versione>)" già pushato (serve gh)
+# GitHub release: tag v<version> + installer, notes taken from the already pushed "(<version>)" commit (needs gh)
 .\release.ps1
 ```
 
+Commit messages for a version are written in English, then a line with `---`, then the same in Italian:
+`release.ps1` turns them into bilingual release notes.
 
-## Licenze delle librerie
+## Library licenses
 
-**Ghostscript (AGPL), Pandoc (GPL) e FFmpeg (GPL) sono inclusi**: va bene per uso personale. Se un giorno Lemonize venisse distribuito ad altri, bisognerà rispettare l'AGPL (codice sorgente pubblico) oppure acquistare una licenza commerciale da Artifex, o in alternativa rimuoverlo.
+**Ghostscript (AGPL), Pandoc (GPL) and FFmpeg (GPL) are bundled**: fine for personal use. Should Lemonize ever be distributed to others, the AGPL has to be honored (public source code), or a commercial license bought from Artifex, or Ghostscript removed.
 
+Magick.NET (Apache 2.0), PdfPig (Apache 2.0), ZXing.Net (Apache 2.0), DocumentFormat.OpenXml (MIT), SharpCompress (MIT), **PDFsharp 6.2.4 (MIT)**: versions from 6.5 on are AGPL, so don't upgrade it without a commercial license. FFmpeg is the "essentials" build (GPL).
 
-Magick.NET (Apache 2.0), PdfPig (Apache 2.0), ZXing.Net (Apache 2.0), DocumentFormat.OpenXml (MIT), SharpCompress (MIT), **PDFsharp 6.2.4 (MIT)**: le versioni dalla 6.5 in poi sono AGPL, quindi non aggiornarla senza una licenza commerciale. FFmpeg non è incluso: l'utente lo scarica separatamente (la build "essentials" è GPL).
+## Known limits
 
-## Limiti noti
-
-- **HEIC** si legge (es. foto iPhone → JPEG) ma non si scrive: le foto HEIC compresse o modificate vengono salvate in JPEG.
-- **Pages/Numbers/Keynote**: viene esportata solo l'anteprima incorporata nel file (PDF o JPEG).
-- **PDF → DOCX/EPUB/TXT** estrae il testo, non l'impaginazione.
-- Le conversioni Office passano da Word/Excel/PowerPoint (automazione COM) o da LibreOffice.
-- L'installer non è firmato: al primo avvio Windows mostra "PC protetto da Windows" (*Ulteriori informazioni → Esegui comunque*).
+- **HEIC** can be read (e.g. iPhone photos → JPEG) but not written: compressed or edited HEIC photos are saved as JPEG.
+- **Pages/Numbers/Keynote**: only the preview embedded in the file (PDF or JPEG) is exported.
+- **PDF → DOCX/EPUB/TXT** extracts the text, not the layout.
+- Office conversions go through Word/Excel/PowerPoint (COM automation) or LibreOffice.
+- The installer is not signed: on first launch Windows shows "Windows protected your PC" (*More info → Run anyway*).
