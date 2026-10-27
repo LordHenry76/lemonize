@@ -20,6 +20,7 @@ public static class Glyphs
     public const string Clear = "";
     public const string Qr = "";
     public const string Scan = "";
+    public const string Card = "";
     public const string Pdf = "";
     public const string Grid = "";
     public const string Join = "";
@@ -62,6 +63,7 @@ public static class Commands
                 if (single) items.Add(new("Edit", "crop · adjust · annotate", Glyphs.Edit, () => new ImageEditorWindow(files[0]).Show()));
                 items.Add(new("Images to PDF", null, Glyphs.Pdf, () => ImagesToPdf(files)));
                 items.Add(new("Scan document", "A4 PDF", Glyphs.Scan, () => new ScanWindow(files).Show()));
+                if (files.Count <= 2) items.Add(new("Scan ID card", "front · back", Glyphs.Card, () => new ScanWindow(files, cards: true).Show()));
                 if (!single) items.Add(new("Collage", null, Glyphs.Grid, () => new CollageWindow(files).Show()));
                 items.Add(new("Read QR", null, Glyphs.Qr, () => ReadCodes(files)));
                 break;

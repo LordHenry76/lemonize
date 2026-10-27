@@ -18,7 +18,8 @@ namespace Lemonize.UI;
 
 /// <summary>
 /// Turns photos of paper documents into one A4 PDF: for each photo the sheet's corners are proposed and can be
-/// dragged into place, then every page is straightened and cleaned.
+/// dragged into place, then every page is straightened and cleaned. In card mode the (up to two) photos are the
+/// front and back of an ID card, laid out together on one A4 page.
 /// </summary>
 public sealed class ScanWindow : ThemedWindow
 {
@@ -40,6 +41,7 @@ public sealed class ScanWindow : ThemedWindow
     private enum Grip { None, Corner, Side }
 
     private readonly List<Page> _pages;
+    private readonly bool _cards;
     private int _index;
 
     private readonly Canvas _surface = new() { ClipToBounds = true, Background = new SolidColorBrush(Color.FromRgb(0x10, 0x10, 0x12)), Focusable = true };
@@ -56,6 +58,7 @@ public sealed class ScanWindow : ThemedWindow
     private readonly Button _previous = new() { Content = "Previous" };
     private readonly Button _next = new() { Content = "Next" };
     private readonly Button _remove = new() { Content = "Remove page" };
+    private readonly Button _swap = new() { Content = "Swap front and back" };
     private readonly ComboBox _look = new();
     private readonly Slider _whitening = new() { Minimum = 0, Maximum = 100, Value = 50 };
     private readonly Image _result = new() { Stretch = Stretch.Uniform };
@@ -72,10 +75,11 @@ public sealed class ScanWindow : ThemedWindow
     private bool? _lockHorizontal;
     private Point? _panFrom;
 
-    public ScanWindow(IReadOnlyList<string> files)
+    public ScanWindow(IReadOnlyList<string> files, bool cards = false)
     {
-        _pages = [.. files.Order(StringComparer.CurrentCultureIgnoreCase).Select(f => new Page(f))];
-        Title = _pages.Count == 1 ? Loc.F("Scan document · {0}", Path.GetFileName(_pages[0].File)) : Loc.F("Scan document · {0} photos", _pages.Count);
+        _cards = cards;
+        _pages = [.. files.Order(StringComparer.CurrentCultureIgnoreCase).Take(cards ? 2 : int.MaxValue).Select(f => new Page(f))];
+        UpdateTitle();
         Width = 1180;
         Height = 820;
         WindowStartupLocation = WindowStartupLocation.CenterScreen;
@@ -96,6 +100,9 @@ public sealed class ScanWindow : ThemedWindow
 
     private Page Current => _pages[_index];
 
+    private void UpdateTitle() => Title = _cards ? Loc.T("Scan ID card")
+        : _pages.Count == 1 ? Loc.F("Scan document · {0}", Path.GetFileName(_pages[0].File)) : Loc.F("Scan document · {0} photos", _pages.Count);
+
     // ---------- Layout ----------
 
     private UIElement BuildLayout()
@@ -115,12 +122,12 @@ public sealed class ScanWindow : ThemedWindow
         _next.Click += async (_, _) => await ShowPage(_index + 1);
         side.Children.Add(navigation);
 
-        side.Children.Add(new TextBlock { Text = "Sheet", Style = (Style)FindResource("Heading"), Margin = new Thickness(0, 18, 0, 8) });
+        side.Children.Add(new TextBlock { Text = _cards ? "Card" : "Sheet", Style = (Style)FindResource("Heading"), Margin = new Thickness(0, 18, 0, 8) });
         var transform = new WrapPanel();
         transform.Children.Add(SmallButton("", "Rotate left", () => Rotate(-90)));
         transform.Children.Add(SmallButton("", "Rotate right", () => Rotate(90), mirror: true));
         side.Children.Add(transform);
-        var detect = new Button { Content = "Find the sheet again", HorizontalAlignment = HorizontalAlignment.Stretch, Margin = new Thickness(0, 0, 0, 6) };
+        var detect = new Button { Content = _cards ? "Find the card again" : "Find the sheet again", HorizontalAlignment = HorizontalAlignment.Stretch, Margin = new Thickness(0, 0, 0, 6) };
         detect.Click += (_, _) => SetCorners(Detect(Current));
         side.Children.Add(detect);
         var whole = new Button { Content = "Whole photo", HorizontalAlignment = HorizontalAlignment.Stretch, Margin = new Thickness(0, 0, 0, 6) };
@@ -129,11 +136,25 @@ public sealed class ScanWindow : ThemedWindow
             if (Current.Display is { } d) SetCorners([new(0, 0), new(d.Width, 0), new(d.Width, d.Height), new(0, d.Height)]);
         };
         side.Children.Add(whole);
+        if (_cards)
+        {
+            _swap.HorizontalAlignment = HorizontalAlignment.Stretch;
+            _swap.Margin = new Thickness(0, 0, 0, 6);
+            _swap.Click += async (_, _) =>
+            {
+                _pages.Reverse();
+                await ShowPage(1 - _index);
+            };
+            side.Children.Add(_swap);
+        }
+        _remove.Content = _cards ? "Remove this side" : "Remove page";
         _remove.HorizontalAlignment = HorizontalAlignment.Stretch;
         _remove.Click += async (_, _) => await RemovePage();
         side.Children.Add(_remove);
 
-        side.Children.Add(new TextBlock { Text = "Look", Style = (Style)FindResource("Heading"), Margin = new Thickness(0, 18, 0, 8) });
+        var look = new StackPanel { Visibility = _cards ? Visibility.Collapsed : Visibility.Visible };
+        side.Children.Add(look);
+        look.Children.Add(new TextBlock { Text = "Look", Style = (Style)FindResource("Heading"), Margin = new Thickness(0, 18, 0, 8) });
         _look.ItemsSource = new[] { Loc.T("Black and white"), Loc.T("Color"), Loc.T("Original") };
         _look.SelectedIndex = 0;
         _look.SelectionChanged += (_, _) =>
@@ -141,7 +162,7 @@ public sealed class ScanWindow : ThemedWindow
             _whitening.IsEnabled = Look != ScanLook.Original;
             UpdateResult();
         };
-        side.Children.Add(_look);
+        look.Children.Add(_look);
         var whiteningLabel = new TextBlock { Style = (Style)FindResource("Dim"), Margin = new Thickness(0, 10, 0, 0) };
         void UpdateWhiteningLabel() => whiteningLabel.Text = $"{Loc.T("Whitening")} · {_whitening.Value:0}";
         _whitening.ValueChanged += (_, _) =>
@@ -151,8 +172,8 @@ public sealed class ScanWindow : ThemedWindow
             _previewTimer.Start();
         };
         UpdateWhiteningLabel();
-        side.Children.Add(whiteningLabel);
-        side.Children.Add(_whitening);
+        look.Children.Add(whiteningLabel);
+        look.Children.Add(_whitening);
 
         side.Children.Add(new TextBlock { Text = "Result", Style = (Style)FindResource("Dim"), Margin = new Thickness(0, 14, 0, 6) });
         side.Children.Add(new Border
@@ -235,12 +256,13 @@ public sealed class ScanWindow : ThemedWindow
         if (index < 0 || index >= _pages.Count) return;
         _index = index;
         var page = Current;
-        _pageLabel.Text = Loc.F("Page {0} of {1}", index + 1, _pages.Count);
+        _pageLabel.Text = _cards ? Loc.T(index == 0 ? "Front" : "Back") : Loc.F("Page {0} of {1}", index + 1, _pages.Count);
         _fileLabel.Text = Path.GetFileName(page.File);
         _fileLabel.ToolTip = page.File;
         _previous.IsEnabled = index > 0;
         _next.IsEnabled = index < _pages.Count - 1;
         _remove.IsEnabled = _pages.Count > 1;
+        _swap.IsEnabled = _pages.Count == 2;
 
         if (page.Display is null)
         {
@@ -256,7 +278,7 @@ public sealed class ScanWindow : ThemedWindow
                     var display = (MagickImage)photo.Clone();
                     if (display.Width > DisplayMax || display.Height > DisplayMax)
                         display.Resize(new MagickGeometry(DisplayMax, DisplayMax));
-                    var corners = ScanEngine.DetectSheet(display) ?? ScanEngine.DefaultCorners(display.Width, display.Height);
+                    var corners = FindCorners(display);
                     return (display, photo.Width / (double)display.Width, corners);
                 });
                 page.Display = display;
@@ -282,8 +304,11 @@ public sealed class ScanWindow : ThemedWindow
         _surface.Focus();
     }
 
-    private Point[] Detect(Page page) =>
-        page.Display is not { } d ? page.Corners ?? [] : ScanEngine.DetectSheet(d) ?? ScanEngine.DefaultCorners(d.Width, d.Height);
+    private Point[] Detect(Page page) => page.Display is { } d ? FindCorners(d) : page.Corners ?? [];
+
+    private Point[] FindCorners(MagickImage display) => _cards
+        ? ScanEngine.DetectCard(display) ?? ScanEngine.DefaultCardCorners(display.Width, display.Height)
+        : ScanEngine.DetectSheet(display) ?? ScanEngine.DefaultCorners(display.Width, display.Height);
 
     private void SetCorners(Point[] corners)
     {
@@ -321,7 +346,7 @@ public sealed class ScanWindow : ThemedWindow
         if (_pages.Count <= 1) return;
         lock (Current) Current.Display?.Dispose();
         _pages.RemoveAt(_index);
-        Title = _pages.Count == 1 ? Loc.F("Scan document · {0}", Path.GetFileName(_pages[0].File)) : Loc.F("Scan document · {0} photos", _pages.Count);
+        UpdateTitle();
         await ShowPage(Math.Min(_index, _pages.Count - 1));
     }
 
@@ -529,13 +554,14 @@ public sealed class ScanWindow : ThemedWindow
         var look = Look;
         var whitening = _whitening.Value / 100;
         var page = Current;
+        var cards = _cards;
         Task.Run(() =>
         {
             // The preview straightens from the display copy, small enough to keep up with dragging.
             lock (page)
             {
-                using var result = ScanEngine.Straighten(display, quad, 700);
-                ScanEngine.Clean(result, look, whitening);
+                using var result = cards ? ScanEngine.StraightenCard(display, quad, 0.6) : ScanEngine.Straighten(display, quad, 700);
+                if (!cards) ScanEngine.Clean(result, look, whitening);
                 return ImageEngine.ToBitmapSource(result);
             }
         }).ContinueWith(t =>
@@ -552,6 +578,18 @@ public sealed class ScanWindow : ThemedWindow
         var pages = _pages.Select(p => new ScanPage(p.File, p.Rotation,
             p.Corners?.Select(c => new Point(c.X * p.Scale, c.Y * p.Scale)).ToArray(), look, whitening)).ToList();
         var files = pages.Select(p => p.File).ToList();
+        if (_cards)
+        {
+            JobQueue.Enqueue(Loc.T("ID card → PDF"), files[0], (job, _) =>
+            {
+                var output = OutputPaths.For(files[0], "pdf");
+                ScanEngine.CardsToPdf(pages, output, job.Report);
+                job.Outputs.Add(output);
+                return Task.CompletedTask;
+            });
+            Close();
+            return;
+        }
         JobQueue.Enqueue(pages.Count == 1 ? Loc.T("Scan 1 photo → PDF") : Loc.F("Scan {0} photos → PDF", pages.Count), files[0], (job, _) =>
         {
             var output = files.Count == 1 ? OutputPaths.For(files[0], "pdf") : OutputPaths.ForGroup(files, Loc.T("Scan"), "pdf");

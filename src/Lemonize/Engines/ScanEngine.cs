@@ -1,6 +1,7 @@
 using System.IO;
 using System.Windows;
 using ImageMagick;
+using ImageMagick.Drawing;
 using PdfSharp.Drawing;
 using PdfSharp.Pdf;
 
@@ -16,13 +17,23 @@ public sealed record ScanPage(string File, int Rotation, Point[]? Corners, ScanL
 
 /// <summary>
 /// Turns photos of paper documents into flat A4 pages: finds the sheet, undoes the perspective,
-/// evens out shadows and lighting.
+/// evens out shadows and lighting. Also lays out ID cards (front and back) on an A4 page.
 /// </summary>
 public static class ScanEngine
 {
     private const double Dpi = 300;
-    private static readonly int A4Short = (int)Math.Round(210 / 25.4 * Dpi);
-    private static readonly int A4Long = (int)Math.Round(297 / 25.4 * Dpi);
+    private static readonly int A4Short = Px(210);
+    private static readonly int A4Long = Px(297);
+
+    // ID-1 cards (identity card, driving licence, health card): 85.6 × 54 mm with 3.18 mm corners,
+    // front above back with 70 mm between them, the pair centered on a portrait A4.
+    private static readonly int CardWidth = Px(85.6);
+    private static readonly int CardHeight = Px(54);
+    private static readonly int CardRadius = Px(3.18);
+    private static readonly int CardGap = Px(70);
+    private const double CardAspect = 85.6 / 54;
+
+    private static int Px(double mm) => (int)Math.Round(mm / 25.4 * Dpi);
 
     /// <summary>
     /// Finds the sheet as a bright, colorless region that fills the quadrilateral of its own corners and returns
@@ -167,7 +178,11 @@ public static class ScanEngine
         var across = (Distance(corners[0], corners[1]) + Distance(corners[3], corners[2])) / 2;
         var down = (Distance(corners[0], corners[3]) + Distance(corners[1], corners[2])) / 2;
         var (w, h) = across > down ? (longSide, shortSide) : (shortSide, longSide);
+        return Warp(photo, corners, w, h);
+    }
 
+    private static MagickImage Warp(MagickImage photo, IReadOnlyList<Point> corners, int w, int h)
+    {
         Point[] target = [new(0, 0), new(w, 0), new(w, h), new(0, h)];
         var args = new double[16];
         for (var i = 0; i < 4; i++)
@@ -270,6 +285,77 @@ public static class ScanEngine
             progress?.Invoke((i + 1.0) / pages.Count);
         }
         document.Save(output);
+    }
+
+    /// <summary>The sheet finder, kept only when what it found has a card's proportions.</summary>
+    public static Point[]? DetectCard(MagickImage image)
+    {
+        if (DetectSheet(image) is not { } corners) return null;
+        var across = (Distance(corners[0], corners[1]) + Distance(corners[3], corners[2])) / 2;
+        var down = (Distance(corners[0], corners[3]) + Distance(corners[1], corners[2])) / 2;
+        var ratio = Math.Max(across, down) / Math.Max(1, Math.Min(across, down));
+        return Math.Abs(ratio - CardAspect) < 0.25 ? corners : null;
+    }
+
+    /// <summary>A card-shaped rectangle in the middle of the photo, for when no card is found.</summary>
+    public static Point[] DefaultCardCorners(double width, double height)
+    {
+        var w = Math.Min(width * 0.6, height * 0.6 * CardAspect);
+        var h = w / CardAspect;
+        double x = (width - w) / 2, y = (height - h) / 2;
+        return [new(x, y), new(x + w, y), new(x + w, y + h), new(x, y + h)];
+    }
+
+    /// <summary>
+    /// The card at its real size (300 dpi, or <paramref name="scale"/> times that), always landscape, with
+    /// transparent rounded corners. A card photographed upright is turned a quarter left.
+    /// </summary>
+    public static MagickImage StraightenCard(MagickImage photo, IReadOnlyList<Point> corners, double scale = 1)
+    {
+        var across = (Distance(corners[0], corners[1]) + Distance(corners[3], corners[2])) / 2;
+        var down = (Distance(corners[0], corners[3]) + Distance(corners[1], corners[2])) / 2;
+        if (down > across) corners = [corners[3], corners[0], corners[1], corners[2]];
+        int w = (int)Math.Round(CardWidth * scale), h = (int)Math.Round(CardHeight * scale);
+        var card = Warp(photo, corners, w, h);
+
+        using var mask = new MagickImage(MagickColors.Transparent, (uint)w, (uint)h);
+        var radius = CardRadius * scale;
+        new Drawables().FillColor(MagickColors.White).RoundRectangle(0, 0, w - 1, h - 1, radius, radius).Draw(mask);
+        card.Alpha(AlphaAction.Set);
+        card.Composite(mask, CompositeOperator.DstIn);
+        return card;
+    }
+
+    /// <summary>Front (first) and back (second, optional) on one portrait A4 page, in their original colors.</summary>
+    public static void CardsToPdf(IReadOnlyList<ScanPage> sides, string output, Action<double>? progress = null)
+    {
+        using var page = new MagickImage(MagickColors.White, (uint)A4Short, (uint)A4Long);
+        var x = (A4Short - CardWidth) / 2;
+        var top = (A4Long - (2 * CardHeight + CardGap)) / 2;
+        for (var i = 0; i < Math.Min(2, sides.Count); i++)
+        {
+            var side = sides[i];
+            using var photo = LoadPhoto(side.File, side.Rotation);
+            var corners = side.Corners ?? DetectCard(photo) ?? DefaultCardCorners(photo.Width, photo.Height);
+            using var card = StraightenCard(photo, corners);
+            page.Composite(card, x, top + i * (CardHeight + CardGap), CompositeOperator.Over);
+            progress?.Invoke((i + 1.0) / (Math.Min(2, sides.Count) + 1));
+        }
+        page.Alpha(AlphaAction.Off);
+        page.Format = MagickFormat.Jpeg;
+        page.Quality = 90;
+        using var document = new PdfDocument();
+        using (var stream = new MemoryStream(page.ToByteArray()))
+        using (var ximage = XImage.FromStream(stream))
+        {
+            var pdfPage = document.AddPage();
+            pdfPage.Width = XUnit.FromMillimeter(210);
+            pdfPage.Height = XUnit.FromMillimeter(297);
+            using var gfx = XGraphics.FromPdfPage(pdfPage);
+            gfx.DrawImage(ximage, 0, 0, pdfPage.Width.Point, pdfPage.Height.Point);
+        }
+        document.Save(output);
+        progress?.Invoke(1);
     }
 
     private static double Distance(Point a, Point b) => (a - b).Length;

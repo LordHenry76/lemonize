@@ -373,6 +373,39 @@ await Check("scansiona documento: foglio storto trovato, raddrizzato su A4", asy
     Console.WriteLine($"      {OutputPaths.FormatSize(new FileInfo(o).Length)}, luminosità {mean:0.00}");
     return [o];
 });
+await Check("documento d'identità: fronte e retro a grandezza reale su A4", async () =>
+{
+    // A blue card on a dark table; the back photographed upright, so it must come out turned to landscape.
+    using (var photo = new MagickImage(new MagickColor("#2A2A2A"), 1600, 1200))
+    {
+        new Drawables().FillColor(new MagickColor("#C8D8F0")).Polygon(new PointD(300, 300), new PointD(1290, 320), new PointD(1280, 940), new PointD(310, 930)).Draw(photo);
+        photo.Write(P("card-front.jpg"), MagickFormat.Jpeg);
+        photo.Rotate(90);
+        photo.Write(P("card-back.jpg"), MagickFormat.Jpeg);
+    }
+    var o = P("card.pdf");
+    ScanEngine.CardsToPdf([new ScanPage(P("card-front.jpg"), 0, null, ScanLook.Original, 0), new ScanPage(P("card-back.jpg"), 0, null, ScanLook.Original, 0)], o);
+    if (PdfEngine.PageCount(o) != 1) throw new Exception("pagine: " + PdfEngine.PageCount(o));
+    using var render = new MagickImage((await PdfEngine.RenderAsync(o, [0], 827))[0]);
+    // At 100 dpi a card is 337 × 213 px, centered; front and back 276 px apart (54 + 70 mm).
+    double Mean(int x, int y, int w, int h)
+    {
+        using var area = (MagickImage)render.Clone();
+        area.Crop(new MagickGeometry(x, y, (uint)w, (uint)h));
+        return area.Statistics().GetChannel(PixelChannel.Blue)!.Mean / Quantum.Max - area.Statistics().GetChannel(PixelChannel.Red)!.Mean / Quantum.Max;
+    }
+    int cx = (int)render.Width / 2, top = ((int)render.Height - (2 * 213 + 276)) / 2;
+    foreach (var (name, y) in new[] { ("fronte", top + 106), ("retro", top + 213 + 276 + 106) })
+        if (Mean(cx - 140, y - 80, 280, 160) < 0.05) throw new Exception($"{name}: nessuna carta al suo posto");
+    if (Mean(cx - 140, top + 213 + 60, 280, 150) > 0.02) throw new Exception("tra fronte e retro non è bianco");
+    using (var corner = (MagickImage)render.Clone())
+    {
+        // The rounded corner leaves the very corner of the card's box white.
+        corner.Crop(new MagickGeometry(cx - 168, top, 2, 2));
+        if (corner.Statistics().GetChannel(PixelChannel.Red)!.Mean / Quantum.Max < 0.95) throw new Exception("angolo non arrotondato");
+    }
+    return [o];
+});
 await Check("PDF scansione in grigio salvata come JPEG RGB: compresso non resta bianco", async () =>
 {
     // Like many scanners: gray content stored as a 3-channel JPEG. Re-encoding comes out single-channel.

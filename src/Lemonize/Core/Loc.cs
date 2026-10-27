@@ -37,6 +37,8 @@ public static class Loc
         ["Images to PDF"] = "Immagini in PDF",
         ["Scan document"] = "Scansiona documento",
         ["A4 PDF"] = "PDF A4",
+        ["Scan ID card"] = "Scansiona documento d'identità",
+        ["front · back"] = "fronte · retro",
         ["Collage"] = "Collage",
         ["Read QR"] = "Leggi QR",
         ["trim · crop · speed · split"] = "taglia · velocità",
@@ -373,6 +375,13 @@ public static class Loc
         ["Scan 1 photo → PDF"] = "Scansione 1 foto → PDF",
         ["Scan {0} photos → PDF"] = "Scansione {0} foto → PDF",
         ["Scan"] = "Scansione",
+        ["Card"] = "Documento",
+        ["Front"] = "Fronte",
+        ["Back"] = "Retro",
+        ["Find the card again"] = "Ritrova il documento",
+        ["Swap front and back"] = "Scambia fronte e retro",
+        ["Remove this side"] = "Togli questo lato",
+        ["ID card → PDF"] = "Documento d'identità → PDF",
 
         // ---------- Video editor ----------
         ["Edit video · {0}"] = "Modifica video · {0}",
