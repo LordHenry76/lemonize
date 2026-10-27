@@ -320,6 +320,59 @@ await Check("CSV con NaN/Infinity → XLSX valido", () =>
     if (errors.Count > 0) throw new Exception(errors[0].Description);
     return One(o);
 });
+await Check("scansiona documento: foglio storto trovato, raddrizzato su A4", async () =>
+{
+    // A sheet photographed from above at an angle, on a dark tablecloth, with a shadow across the paper.
+    var sheet = new[] { new PointD(380, 260), new PointD(1620, 300), new PointD(1760, 2050), new PointD(250, 1990) };
+    using (var photo = new MagickImage(new MagickColor("#4A3B30"), 2000, 2300))
+    {
+        new Drawables().FillColor(new MagickColor("#F2F0EA")).Polygon(sheet).Draw(photo);
+        for (var line = 0; line < 12; line++)
+            new Drawables().FillColor(MagickColors.Black).Rectangle(500, 450 + line * 90, 1450, 470 + line * 90).Draw(photo);
+        new Drawables().FillColor(new MagickColor("#30000000")).Rectangle(1100, 0, 2000, 2300).Draw(photo);
+        photo.Write(P("sheet-photo.jpg"), MagickFormat.Jpeg);
+    }
+    using (var photo = ScanEngine.LoadPhoto(P("sheet-photo.jpg"), 0))
+    {
+        var found = ScanEngine.DetectSheet(photo) ?? throw new Exception("foglio non trovato");
+        for (var i = 0; i < 4; i++)
+            if (Math.Abs(found[i].X - sheet[i].X) > 40 || Math.Abs(found[i].Y - sheet[i].Y) > 40)
+                throw new Exception($"angolo {i}: ({found[i].X:0}, {found[i].Y:0}) invece di ({sheet[i].X}, {sheet[i].Y})");
+    }
+    using (var empty = new MagickImage(new MagickColor("#4A3B30"), 800, 600))
+        if (ScanEngine.DetectSheet(empty) is not null) throw new Exception("foglio trovato in una foto senza fogli");
+
+    // Evenly lit gray paper must stay even right up to the page edge: no darker frame.
+    using (var flat = new MagickImage(new MagickColor("#B4B4B4"), 1200, 1600))
+    using (var page = ScanEngine.Straighten(flat, [new(0, 0), new(1200, 0), new(1200, 1600), new(0, 1600)], 1600))
+    {
+        ScanEngine.Clean(page, ScanLook.BlackAndWhite, 1);
+        double Mean(int x) { using var strip = (MagickImage)page.Clone(); strip.Crop(new MagickGeometry(x, 400, 6, 400)); return strip.Statistics().GetChannel(PixelChannel.Red)!.Mean / Quantum.Max * 255; }
+        var (edge, inside) = (Mean(0), Mean((int)page.Width / 2));
+        if (inside - edge > 4) throw new Exception($"cornice scura: bordo {edge:0}, interno {inside:0}");
+    }
+
+    var o = P("scan-a4.pdf");
+    ScanEngine.ToPdf([
+        new ScanPage(P("sheet-photo.jpg"), 0, null, ScanLook.BlackAndWhite, 0.5),
+        new ScanPage(P("sheet-photo.jpg"), 90, null, ScanLook.Color, 1),
+    ], o);
+    using (var doc = PdfSharp.Pdf.IO.PdfReader.Open(o, PdfSharp.Pdf.IO.PdfDocumentOpenMode.Import))
+    {
+        var sizes = doc.Pages.Cast<PdfSharp.Pdf.PdfPage>().Select(p => $"{p.Width.Millimeter:0}×{p.Height.Millimeter:0}").ToList();
+        if (string.Join(" ", sizes) != "210×297 297×210") throw new Exception("pagine " + string.Join(" ", sizes));
+    }
+    using var render = new MagickImage((await PdfEngine.RenderAsync(o, [0], 100))[0]);
+    // Paper fills the page: mostly white, with the dark text lines, and no tablecloth left around the edges.
+    var mean = render.Statistics().GetChannel(PixelChannel.Red)!.Mean / Quantum.Max;
+    if (mean is < 0.7 or > 0.97) throw new Exception($"luminosità media {mean:0.00}");
+    using var border = (MagickImage)render.Clone();
+    border.Crop(new MagickGeometry(0, 0, render.Width, 8));
+    var borderMean = border.Statistics().GetChannel(PixelChannel.Red)!.Mean / Quantum.Max;
+    if (borderMean < 0.8) throw new Exception($"bordo superiore scuro ({borderMean:0.00}): resta sfondo");
+    Console.WriteLine($"      {OutputPaths.FormatSize(new FileInfo(o).Length)}, luminosità {mean:0.00}");
+    return [o];
+});
 await Check("PDF scansione in grigio salvata come JPEG RGB: compresso non resta bianco", async () =>
 {
     // Like many scanners: gray content stored as a 3-channel JPEG. Re-encoding comes out single-channel.
