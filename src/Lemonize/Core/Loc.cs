@@ -382,6 +382,9 @@ public static class Loc
         ["Swap front and back"] = "Scambia fronte e retro",
         ["Remove this side"] = "Togli questo lato",
         ["ID card → PDF"] = "Documento d'identità → PDF",
+        ["Name of the PDF:"] = "Nome del PDF:",
+        ["{0} already exists. Replace it?"] = "{0} esiste già. Vuoi sostituirlo?",
+        ["Replace"] = "Sostituisci",
 
         // ---------- Video editor ----------
         ["Edit video · {0}"] = "Modifica video · {0}",
