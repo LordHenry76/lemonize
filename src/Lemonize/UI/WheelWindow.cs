@@ -505,12 +505,26 @@ public sealed class WheelWindow : Window
             if (s.Item.Caption is not null) y -= 6;
             if (s.Item.Glyph is { } glyph)
             {
-                DrawText(dc, glyph, 18, IconFace, Ink, new Point(p.X, y));
+                if (glyph == Glyphs.IdCard) DrawIdCard(dc, new Point(p.X, y));
+                else DrawText(dc, glyph, 18, IconFace, Ink, new Point(p.X, y));
                 y += 22;
             }
             DrawText(dc, Loc.T(s.Item.Label), s.Item.Glyph is null ? 15 : 12, UiFace, Ink, new Point(p.X, y), maxWidth);
             if (s.Item.Caption is { } caption)
                 DrawText(dc, Loc.T(caption), 9.5, UiFaceRegular, dim, new Point(p.X, y + 16), maxWidth);
+        }
+
+        /// <summary>A small ID card the size of an icon glyph: rounded outline, a photo on the left, text lines on the right.</summary>
+        private static void DrawIdCard(DrawingContext dc, Point center)
+        {
+            var pen = new Pen(Ink, 1.3);
+            dc.DrawRoundedRectangle(null, pen, new Rect(center.X - 11, center.Y - 7.5, 22, 15), 2.5, 2.5);
+            dc.DrawEllipse(Ink, null, new Point(center.X - 5.5, center.Y - 2), 2, 2);
+            dc.DrawRoundedRectangle(Ink, null, new Rect(center.X - 8.5, center.Y + 0.8, 6, 3.2), 1.6, 1.6);
+            var thin = new Pen(Ink, 1.1);
+            dc.DrawLine(thin, new Point(center.X + 0.5, center.Y - 3), new Point(center.X + 7.5, center.Y - 3));
+            dc.DrawLine(thin, new Point(center.X + 0.5, center.Y), new Point(center.X + 7.5, center.Y));
+            dc.DrawLine(thin, new Point(center.X + 0.5, center.Y + 3), new Point(center.X + 5, center.Y + 3));
         }
 
         /// <summary>Centered text; when <paramref name="maxWidth"/> is given it shrinks (down to 75%) and then trims to fit.</summary>
