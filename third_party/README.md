@@ -13,4 +13,4 @@ I file eseguibili non sono nel repository (superano i limiti di GitHub): si scar
 | `ghostscript/` | Ghostscript 10.08 (Artifex) | AGPL | compressione PDF |
 | `pandoc/` | Pandoc 3.12.1 | GPL | DOCX ↔ EPUB / Markdown |
 
-Vanno bene per uso personale. Prima di distribuire Lemonize ad altri vanno riviste le licenze (vedi README principale).
+Sono compatibili con la licenza di Lemonize (GPLv3, vedi `LICENSE` e il README principale).

@@ -30,7 +30,7 @@ Translations live in `Core/Loc.cs`: the English text is the key and there is an 
 src/Lemonize/
   App.xaml(.cs)        startup, single instance (named pipe), notification-area icon, global mouse hook
   Core/                settings, file kinds, conversion catalog (Converter), wheel commands,
-                       output paths, license, Windows integration, FFmpeg installer
+                       output paths, Windows integration, FFmpeg installer
   Engines/             Image (Magick.NET), Media/MediaTools/Ffmpeg, Pdf (PDFsharp, PdfPig, Windows.Data.Pdf),
                        Document (OpenXML, EPUB), Office (COM/LibreOffice), Archive, Subtitle,
                        Metadata, Compression, Qr (ZXing), Scan (document and ID card scanning)
@@ -74,11 +74,15 @@ dotnet run --project tools/Lemonize.Mockups
 Commit messages for a version are written in English, then a line with `---`, then the same in Italian:
 `release.ps1` turns them into bilingual release notes.
 
-## Library licenses
+## License
 
-**Ghostscript (AGPL), Pandoc (GPL) and FFmpeg (GPL) are bundled**: fine for personal use. Should Lemonize ever be distributed to others, the AGPL has to be honored (public source code), or a commercial license bought from Artifex, or Ghostscript removed.
+Lemonize is free software released under the **GNU General Public License v3.0** (see [LICENSE](LICENSE)): you can use, study, modify and share it, as long as modified versions you distribute stay under the same license with their source code.
 
-Magick.NET (Apache 2.0), PdfPig (Apache 2.0), ZXing.Net (Apache 2.0), DocumentFormat.OpenXml (MIT), SharpCompress (MIT), **PDFsharp 6.2.4 (MIT)**: versions from 6.5 on are AGPL, so don't upgrade it without a commercial license. FFmpeg is the "essentials" build (GPL).
+### Bundled programs and libraries
+
+The installer includes **FFmpeg** (GPL, "essentials" build), **Pandoc** (GPL) and **Ghostscript** (AGPL). They run as separate programs, and their source code is available from their authors; their license texts are in `third_party/`.
+
+Magick.NET (Apache 2.0), PdfPig (Apache 2.0), ZXing.Net (Apache 2.0), DocumentFormat.OpenXml (MIT), SharpCompress (MIT), **PDFsharp 6.2.4 (MIT)**: versions from 6.5 on are AGPL, so don't upgrade it without a commercial license.
 
 ## Known limits
 

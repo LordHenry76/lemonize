@@ -30,7 +30,7 @@ Le traduzioni sono in `Core/Loc.cs`: il testo inglese fa da chiave e c'è un diz
 src/Lemonize/
   App.xaml(.cs)        avvio, istanza singola (named pipe), icona nell'area di notifica, hook globale del mouse
   Core/                impostazioni, tipi di file, catalogo conversioni (Converter), comandi delle ruote,
-                       percorsi di output, licenza, integrazione con Windows, installer di FFmpeg
+                       percorsi di output, integrazione con Windows, installer di FFmpeg
   Engines/             Image (Magick.NET), Media/MediaTools/Ffmpeg, Pdf (PDFsharp, PdfPig, Windows.Data.Pdf),
                        Document (OpenXML, EPUB), Office (COM/LibreOffice), Archive, Subtitle,
                        Metadata, Compression, Qr (ZXing), Scan (scansione di fogli e documenti d'identità)
@@ -75,12 +75,16 @@ I commit di una versione si scrivono in inglese, poi una riga con `---`, poi lo 
 `release.ps1` li trasforma in note di release in entrambe le lingue.
 
 
-## Licenze delle librerie
+## Licenza
 
-**Ghostscript (AGPL), Pandoc (GPL) e FFmpeg (GPL) sono inclusi**: va bene per uso personale. Se un giorno Lemonize venisse distribuito ad altri, bisognerà rispettare l'AGPL (codice sorgente pubblico) oppure acquistare una licenza commerciale da Artifex, o in alternativa rimuoverlo.
+Lemonize è software libero distribuito con licenza **GNU General Public License v3.0** (vedi [LICENSE](LICENSE)): puoi usarlo, studiarlo, modificarlo e condividerlo, a patto che le versioni modificate che distribuisci restino sotto la stessa licenza e con il codice sorgente.
+
+### Programmi e librerie inclusi
+
+L'installer contiene **FFmpeg** (GPL, build "essentials"), **Pandoc** (GPL) e **Ghostscript** (AGPL). Funzionano come programmi separati e il loro codice sorgente è disponibile presso i rispettivi autori; i testi delle loro licenze sono in `third_party/`.
 
 
-Magick.NET (Apache 2.0), PdfPig (Apache 2.0), ZXing.Net (Apache 2.0), DocumentFormat.OpenXml (MIT), SharpCompress (MIT), **PDFsharp 6.2.4 (MIT)**: le versioni dalla 6.5 in poi sono AGPL, quindi non aggiornarla senza una licenza commerciale. FFmpeg è la build "essentials" (GPL).
+Magick.NET (Apache 2.0), PdfPig (Apache 2.0), ZXing.Net (Apache 2.0), DocumentFormat.OpenXml (MIT), SharpCompress (MIT), **PDFsharp 6.2.4 (MIT)**: le versioni dalla 6.5 in poi sono AGPL, quindi non aggiornarla senza una licenza commerciale.
 
 ## Limiti noti
 
