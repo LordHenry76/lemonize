@@ -30,6 +30,7 @@ public sealed class ScanWindow : ThemedWindow
     {
         public string File { get; } = file;
         public int Rotation { get; set; }
+        public bool AutoTone { get; set; }
         /// <summary>In display pixels; null until the page has been shown.</summary>
         public Point[]? Corners { get; set; }
         public MagickImage? Display { get; set; }
@@ -59,6 +60,7 @@ public sealed class ScanWindow : ThemedWindow
     private readonly Button _next = new() { Content = "Next" };
     private readonly Button _remove = new() { Content = "Remove page" };
     private readonly Button _swap = new() { Content = "Swap front and back" };
+    private readonly CheckBox _autoTone = new() { Content = "Auto tone" };
     private readonly ComboBox _look = new();
     private readonly Slider _whitening = new() { Minimum = 0, Maximum = 100, Value = 50 };
     private readonly Image _result = new() { Stretch = Stretch.Uniform };
@@ -151,6 +153,17 @@ public sealed class ScanWindow : ThemedWindow
         _remove.HorizontalAlignment = HorizontalAlignment.Stretch;
         _remove.Click += async (_, _) => await RemovePage();
         side.Children.Add(_remove);
+
+        side.Children.Add(new TextBlock { Text = "Tone", Style = (Style)FindResource("Heading"), Margin = new Thickness(0, 18, 0, 8) });
+        _autoTone.ToolTip = _cards
+            ? "Fixes dark photos and color casts, like Photoshop's Auto Tone. Applies to this side only."
+            : "Fixes dark photos and color casts, like Photoshop's Auto Tone. Applies to this page only.";
+        _autoTone.Click += (_, _) =>
+        {
+            Current.AutoTone = _autoTone.IsChecked == true;
+            UpdateResult();
+        };
+        side.Children.Add(_autoTone);
 
         var look = new StackPanel { Visibility = _cards ? Visibility.Collapsed : Visibility.Visible };
         side.Children.Add(look);
@@ -263,6 +276,7 @@ public sealed class ScanWindow : ThemedWindow
         _next.IsEnabled = index < _pages.Count - 1;
         _remove.IsEnabled = _pages.Count > 1;
         _swap.IsEnabled = _pages.Count == 2;
+        _autoTone.IsChecked = page.AutoTone;
 
         if (page.Display is null)
         {
@@ -555,12 +569,14 @@ public sealed class ScanWindow : ThemedWindow
         var whitening = _whitening.Value / 100;
         var page = Current;
         var cards = _cards;
+        var autoTone = page.AutoTone;
         Task.Run(() =>
         {
             // The preview straightens from the display copy, small enough to keep up with dragging.
             lock (page)
             {
                 using var result = cards ? ScanEngine.StraightenCard(display, quad, 0.6) : ScanEngine.Straighten(display, quad, 700);
+                if (autoTone) ScanEngine.AutoTone(result);
                 if (!cards) ScanEngine.Clean(result, look, whitening);
                 return ImageEngine.ToBitmapSource(result);
             }
@@ -576,7 +592,7 @@ public sealed class ScanWindow : ThemedWindow
         var look = Look;
         var whitening = _whitening.Value / 100;
         var pages = _pages.Select(p => new ScanPage(p.File, p.Rotation,
-            p.Corners?.Select(c => new Point(c.X * p.Scale, c.Y * p.Scale)).ToArray(), look, whitening)).ToList();
+            p.Corners?.Select(c => new Point(c.X * p.Scale, c.Y * p.Scale)).ToArray(), look, whitening, p.AutoTone)).ToList();
         var files = pages.Select(p => p.File).ToList();
         var output = AskOutput(OutputPaths.DirectoryFor(files[0]), files.Count == 1 || _cards ? OutputPaths.BaseName(files[0]) : Loc.T("Scan"));
         if (output is null) return;

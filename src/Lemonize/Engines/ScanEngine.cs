@@ -11,9 +11,9 @@ public enum ScanLook { BlackAndWhite, Color, Original }
 
 /// <summary>
 /// One photo to scan. Corners are top-left, top-right, bottom-right, bottom-left in the photo's pixels after
-/// rotation; null means detect them (or take the whole photo).
+/// rotation; null means detect them (or take the whole photo). AutoTone first fixes dark photos and color casts.
 /// </summary>
-public sealed record ScanPage(string File, int Rotation, Point[]? Corners, ScanLook Look, double Whitening);
+public sealed record ScanPage(string File, int Rotation, Point[]? Corners, ScanLook Look, double Whitening, bool AutoTone = false);
 
 /// <summary>
 /// Turns photos of paper documents into flat A4 pages: finds the sheet, undoes the perspective,
@@ -250,6 +250,49 @@ public static class ScanEngine
         page.ReadPixels(rgb, new PixelReadSettings((uint)w, (uint)h, StorageType.Char, PixelMapping.RGB));
     }
 
+    /// <summary>
+    /// Like Photoshop's Auto Tone: stretches each of red, green and blue on its own so its darkest and brightest
+    /// values (ignoring the outer 0.1%) span the full range. Brightens dark photos and removes color casts.
+    /// Transparent pixels (a card's rounded corners) are left out of the measure.
+    /// </summary>
+    public static void AutoTone(MagickImage image)
+    {
+        const double Clip = 0.001;
+        int w = (int)image.Width, h = (int)image.Height;
+        var alpha = image.HasAlpha;
+        var mapping = alpha ? PixelMapping.RGBA : PixelMapping.RGB;
+        var step = alpha ? 4 : 3;
+        byte[] pixels;
+        using (var p = image.GetPixels()) pixels = p.ToByteArray(mapping)!;
+
+        var histograms = new int[3, 256];
+        var counted = 0;
+        for (var i = 0; i < pixels.Length; i += step)
+        {
+            if (alpha && pixels[i + 3] == 0) continue;
+            counted++;
+            for (var c = 0; c < 3; c++) histograms[c, pixels[i + c]]++;
+        }
+        if (counted == 0) return;
+
+        var lookup = new byte[3, 256];
+        var clip = (int)(counted * Clip);
+        for (var c = 0; c < 3; c++)
+        {
+            int low = 0, high = 255, sum = 0;
+            for (; low < 255; low++) if ((sum += histograms[c, low]) > clip) break;
+            sum = 0;
+            for (; high > 0; high--) if ((sum += histograms[c, high]) > clip) break;
+            // A channel with (almost) a single value has nothing to stretch.
+            if (high - low < 8) { low = 0; high = 255; }
+            for (var v = 0; v < 256; v++)
+                lookup[c, v] = (byte)Math.Clamp(Math.Round((v - low) * 255.0 / (high - low)), 0, 255);
+        }
+        for (var i = 0; i < pixels.Length; i += step)
+            for (var c = 0; c < 3; c++) pixels[i + c] = lookup[c, pixels[i + c]];
+        image.ReadPixels(pixels, new PixelReadSettings((uint)w, (uint)h, StorageType.Char, mapping));
+    }
+
     /// <summary>Loads a page's photo in the orientation the user sees it.</summary>
     public static MagickImage LoadPhoto(string file, int rotation)
     {
@@ -269,6 +312,7 @@ public static class ScanEngine
             using var photo = LoadPhoto(scan.File, scan.Rotation);
             var corners = scan.Corners ?? DetectSheet(photo) ?? DefaultCorners(photo.Width, photo.Height);
             using var image = Straighten(photo, corners);
+            if (scan.AutoTone) AutoTone(image);
             Clean(image, scan.Look, scan.Whitening);
             image.Format = MagickFormat.Jpeg;
             image.Quality = 85;
@@ -338,6 +382,7 @@ public static class ScanEngine
             using var photo = LoadPhoto(side.File, side.Rotation);
             var corners = side.Corners ?? DetectCard(photo) ?? DefaultCardCorners(photo.Width, photo.Height);
             using var card = StraightenCard(photo, corners);
+            if (side.AutoTone) AutoTone(card);
             page.Composite(card, x, top + i * (CardHeight + CardGap), CompositeOperator.Over);
             progress?.Invoke((i + 1.0) / (Math.Min(2, sides.Count) + 1));
         }

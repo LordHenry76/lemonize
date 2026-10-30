@@ -385,6 +385,10 @@ public static class Loc
         ["Name of the PDF:"] = "Nome del PDF:",
         ["{0} already exists. Replace it?"] = "{0} esiste già. Vuoi sostituirlo?",
         ["Replace"] = "Sostituisci",
+        ["Tone"] = "Tono",
+        ["Auto tone"] = "Tono automatico",
+        ["Fixes dark photos and color casts, like Photoshop's Auto Tone. Applies to this page only."] = "Corregge foto scure e dominanti di colore, come il Tono automatico di Photoshop. Vale solo per questa pagina.",
+        ["Fixes dark photos and color casts, like Photoshop's Auto Tone. Applies to this side only."] = "Corregge foto scure e dominanti di colore, come il Tono automatico di Photoshop. Vale solo per questo lato.",
 
         // ---------- Video editor ----------
         ["Edit video · {0}"] = "Modifica video · {0}",

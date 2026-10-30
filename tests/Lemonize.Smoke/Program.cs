@@ -373,6 +373,21 @@ await Check("scansiona documento: foglio storto trovato, raddrizzato su A4", asy
     Console.WriteLine($"      {OutputPaths.FormatSize(new FileInfo(o).Length)}, luminosità {mean:0.00}");
     return [o];
 });
+await Check("tono automatico: foto scura e ciano torna neutra", () =>
+{
+    // Dim cyan "paper" with darker "text": red is squeezed low, so the paper comes out cyan until each channel is stretched.
+    using var photo = new MagickImage(new MagickColor("#5A8C96"), 600, 400);
+    new Drawables().FillColor(new MagickColor("#1E2A2E")).Rectangle(100, 100, 500, 140).Rectangle(100, 200, 400, 240).Draw(photo);
+    ScanEngine.AutoTone(photo);
+    var stats = photo.Statistics();
+    double Max(PixelChannel c) => stats.GetChannel(c)!.Maximum / Quantum.Max * 255;
+    var (r, g, b) = (Max(PixelChannel.Red), Max(PixelChannel.Green), Max(PixelChannel.Blue));
+    if (Math.Min(r, Math.Min(g, b)) < 245) throw new Exception($"carta non bianca: {r:0} {g:0} {b:0}");
+    Console.WriteLine($"      carta {r:0} {g:0} {b:0}");
+    var o = P("autotone.jpg");
+    photo.Write(o, MagickFormat.Jpeg);
+    return Task.FromResult<IEnumerable<string>>([o]);
+});
 await Check("documento d'identità: fronte e retro a grandezza reale su A4", async () =>
 {
     // A blue card on a dark table; the back photographed upright, so it must come out turned to landscape.
