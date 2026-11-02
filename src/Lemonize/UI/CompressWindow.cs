@@ -73,8 +73,10 @@ public sealed class CompressWindow : ThemedWindow
         body.Children.Add(new TextBlock
         {
             Style = (Style)FindResource("Dim"), Margin = new Thickness(0, 14, 0, 0),
-            Text = "Images keep their format when possible; videos become MP4 (H.264); PDFs re-compress embedded images. " +
-                   "Results are saved as new files marked “(compressed)”.",
+            Text = files.All(f => FileKinds.Detect(f) == FileKind.Pdf)
+                ? "Embedded images are re-compressed. The compressed PDF keeps the file's name; the original is kept as “name_original.pdf”."
+                : "Images keep their format when possible; videos become MP4 (H.264). Results are saved as new files marked “(compressed)”. " +
+                  "A compressed PDF keeps the file's name instead; the original is kept as “name_original.pdf”.",
         });
 
         var buttons = new StackPanel { Orientation = Orientation.Horizontal, HorizontalAlignment = HorizontalAlignment.Right, Margin = new Thickness(0, 22, 0, 0) };

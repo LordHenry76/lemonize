@@ -1,3 +1,4 @@
+using System.IO;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Input;
@@ -78,6 +79,30 @@ public static class Dialogs
         window.Topmost = true;
         window.ShowDialog();
         return result;
+    }
+
+    /// <summary>Asks for a PDF's name; an existing file is replaced only once the user agrees. Null if cancelled.</summary>
+    public static string? AskPdfOutput(string folder, string suggested)
+    {
+        var name = suggested;
+        while (true)
+        {
+            var typed = Prompt(Loc.T("Save PDF"), Loc.T("Name of the PDF:"), name);
+            if (typed is null) return null;
+            name = CleanPdfName(typed);
+            if (name.Length == 0) continue;
+            var path = Path.Combine(folder, name + ".pdf");
+            if (!File.Exists(path) || Confirm(Loc.T("Save PDF"), Loc.F("{0} already exists. Replace it?", name + ".pdf"), Loc.T("Replace")))
+                return path;
+        }
+    }
+
+    private static string CleanPdfName(string name)
+    {
+        name = name.Trim();
+        if (name.EndsWith(".pdf", StringComparison.OrdinalIgnoreCase)) name = name[..^4];
+        foreach (var c in Path.GetInvalidFileNameChars()) name = name.Replace(c, ' ');
+        return name.Trim().TrimEnd('.').Trim();
     }
 
     public static bool Confirm(string title, string message, string okText = "OK")

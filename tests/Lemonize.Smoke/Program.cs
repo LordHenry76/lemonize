@@ -18,6 +18,12 @@ Settings.Current.ToolsOverwriteOriginal = false;
 
 var results = new List<(string Name, bool Ok, string Detail)>();
 string P(string name) => Path.Combine(work, name);
+string CopyOf(string file, string tag)
+{
+    var copy = P($"{Path.GetFileNameWithoutExtension(file)} {tag}{Path.GetExtension(file)}");
+    File.Copy(P(file), copy, true);
+    return copy;
+}
 
 async Task Check(string name, Func<Task<IEnumerable<string>>> action)
 {
@@ -116,7 +122,9 @@ foreach (var file in new[] { "photo.jpg", "image.png", "video.mp4", "audio.wav",
     await Check($"compress 50% {file}", async () =>
     {
         var job = new Job("t", null);
-        var output = await CompressionEngine.CompressAsync(P(file), new CompressOptions(true, 0.5, 0), job, default);
+        // A compressed PDF takes its input's name, so PDFs work on a copy to keep the samples for later checks.
+        var source = file.EndsWith(".pdf") ? CopyOf(file, "50") : P(file);
+        var output = await CompressionEngine.CompressAsync(source, new CompressOptions(true, 0.5, 0), job, default);
         Console.WriteLine($"      {OutputPaths.FormatSize(new FileInfo(P(file)).Length)} → {OutputPaths.FormatSize(new FileInfo(output).Length)} ({job.Detail})");
         return [output];
     });
@@ -125,11 +133,79 @@ foreach (var level in new[] { CompressLevel.Light, CompressLevel.Medium, Compres
 {
     await Check($"compress pages.pdf level {level}", async () =>
     {
-        var output = await CompressionEngine.CompressAsync(P("pages.pdf"), new CompressOptions(false, 0, 0, level), new Job("t", null), default);
+        var output = await CompressionEngine.CompressAsync(CopyOf("pages.pdf", level.ToString()), new CompressOptions(false, 0, 0, level), new Job("t", null), default);
         Console.WriteLine($"      {OutputPaths.FormatSize(new FileInfo(P("pages.pdf")).Length)} → {OutputPaths.FormatSize(new FileInfo(output).Length)}");
         return [output];
     });
 }
+await Check("PDF compresso: prende il nome, l'originale resta intatto come _original", async () =>
+{
+    var input = CopyOf("pages.pdf", "rename");
+    var kept = P("pages rename" + Loc.T("_original") + ".pdf");
+    var before = File.ReadAllBytes(input);
+    var output = await CompressionEngine.CompressAsync(input, new CompressOptions(false, 0, 0, CompressLevel.Strong), new Job("t", null), default);
+    if (output != input) throw new Exception("nome risultato: " + output);
+    if (!File.ReadAllBytes(kept).SequenceEqual(before)) throw new Exception("originale alterato");
+    if (new FileInfo(output).Length >= before.Length) throw new Exception("non compresso");
+    if (PdfEngine.PageCount(output) != PdfEngine.PageCount(kept)) throw new Exception("pagine");
+    return [output, kept];
+});
+await Check("PDF compresso due volte: il primo originale non viene sovrascritto", () =>
+{
+    var input = P("twice.pdf");
+    var first = P("twice" + Loc.T("_original") + ".pdf");
+    File.WriteAllText(input, "versione 1");
+    File.WriteAllText(P("t1.tmp"), "versione 2");
+    OutputPaths.ReplaceKeepingOriginal(P("t1.tmp"), input, Loc.T("_original"));
+    File.WriteAllText(P("t2.tmp"), "versione 3");
+    OutputPaths.ReplaceKeepingOriginal(P("t2.tmp"), input, Loc.T("_original"));
+    var second = P("twice" + Loc.T("_original") + " (2).pdf");
+    if (File.ReadAllText(first) != "versione 1" || File.ReadAllText(second) != "versione 2" || File.ReadAllText(input) != "versione 3")
+        throw new Exception("contenuti scambiati");
+    return Task.FromResult<IEnumerable<string>>([input]);
+});
+await Check("PDF aperto in un altro programma: errore chiaro, file al suo posto", () =>
+{
+    var input = P("locked.pdf");
+    File.WriteAllText(input, "originale");
+    File.WriteAllText(P("t3.tmp"), "compresso");
+    using (new FileStream(input, FileMode.Open, FileAccess.Read, FileShare.Read))
+    {
+        try
+        {
+            OutputPaths.ReplaceKeepingOriginal(P("t3.tmp"), input, Loc.T("_original"));
+            throw new Exception("nessun errore");
+        }
+        catch (InvalidOperationException ex) when (ex.Message.Contains("locked.pdf"))
+        {
+            // Expected.
+        }
+    }
+    if (File.ReadAllText(input) != "originale") throw new Exception("originale alterato");
+    if (File.Exists(P("locked" + Loc.T("_original") + ".pdf"))) throw new Exception("rinominato");
+    if (Directory.EnumerateFiles(work, "~lemonize-*").Any()) throw new Exception("temporaneo rimasto");
+    return Task.FromResult<IEnumerable<string>>([input]);
+});
+await Check("PDF compresso con cartella di destinazione: originale non rinominato", () =>
+{
+    var input = P("custom.pdf");
+    var folder = Directory.CreateDirectory(P("custom-out")).FullName;
+    File.WriteAllText(input, "originale");
+    File.WriteAllText(P("t4.tmp"), "compresso");
+    Settings.Current.OutputLocation = OutputLocation.CustomFolder;
+    Settings.Current.CustomOutputFolder = folder;
+    try
+    {
+        var output = OutputPaths.ReplaceKeepingOriginal(P("t4.tmp"), input, Loc.T("_original"));
+        if (output != Path.Combine(folder, "custom.pdf") || File.ReadAllText(output) != "compresso") throw new Exception("risultato: " + output);
+        if (File.ReadAllText(input) != "originale") throw new Exception("originale alterato");
+        return Task.FromResult<IEnumerable<string>>([output]);
+    }
+    finally
+    {
+        Settings.Current.OutputLocation = OutputLocation.BesideOriginal;
+    }
+});
 await Check("compress photo.jpg to 15 KB", async () =>
 {
     var output = await CompressionEngine.CompressAsync(P("photo.jpg"), new CompressOptions(false, 0, 15 * 1024), new Job("t", null), default);
@@ -230,6 +306,15 @@ await Check("pdf merge", () =>
     PdfEngine.Merge([P("pages.pdf"), P("textdoc.pdf")], o);
     if (PdfEngine.PageCount(o) != PdfEngine.PageCount(P("pages.pdf")) + PdfEngine.PageCount(P("textdoc.pdf"))) throw new Exception("page count");
     return One(o);
+});
+await Check("pdf merge con destinazione uguale a un file di partenza", () =>
+{
+    var a = CopyOf("pages.pdf", "merge-a");
+    var b = CopyOf("textdoc.pdf", "merge-b");
+    var expected = PdfEngine.PageCount(a) + PdfEngine.PageCount(b);
+    PdfEngine.Merge([a, b], a);
+    if (PdfEngine.PageCount(a) != expected) throw new Exception("page count");
+    return Task.FromResult<IEnumerable<string>>([a]);
 });
 await Check("pdf split ranges", () => Task.FromResult<IEnumerable<string>>(PdfEngine.Split(P("pages.pdf"), PdfEngine.ParseRanges("1-2, 3", 3))));
 await Check("pdf assemble rotate/reorder", () =>
@@ -468,7 +553,7 @@ await Check("PDF scansione in grigio salvata come JPEG RGB: compresso non resta 
     var outputs = new List<string>();
     foreach (var level in new[] { CompressLevel.Light, CompressLevel.Strong })
     {
-        var o = await CompressionEngine.CompressAsync(P("scan.pdf"), new CompressOptions(false, 0, 0, level), new Job("t", null), default);
+        var o = await CompressionEngine.CompressAsync(CopyOf("scan.pdf", level.ToString()), new CompressOptions(false, 0, 0, level), new Job("t", null), default);
         using var render = new MagickImage((await PdfEngine.RenderAsync(o, [0], 400))[0]);
         // The black rectangle covers ~23% of the page: a blank render would be almost pure white.
         var mean = render.Statistics().GetChannel(PixelChannel.Red)!.Mean / Quantum.Max;

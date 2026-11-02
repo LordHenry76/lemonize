@@ -263,7 +263,6 @@ public static class CompressionEngine
     /// </summary>
     private static async Task<string> CompressPdfStepsAsync(string input, IReadOnlyList<PdfStep> steps, long target, Job job, CancellationToken token)
     {
-        var output = OutputPaths.For(input, "pdf", Suffix);
         var gs = ToolLocator.Ghostscript;
         var gsOutputs = new Dictionary<string, string>();
         string? best = null;
@@ -296,8 +295,7 @@ public static class CompressionEngine
             }
             if (new FileInfo(best!).Length >= new FileInfo(input).Length)
                 throw new InvalidOperationException(Loc.T("This PDF is already as small as Lemonize can make it."));
-            File.Move(best!, output);
-            return output;
+            return OutputPaths.ReplaceKeepingOriginal(best!, input, Loc.T("_original"));
         }
         finally
         {

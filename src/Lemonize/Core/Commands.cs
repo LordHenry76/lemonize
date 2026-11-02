@@ -127,9 +127,11 @@ public static class Commands
     private static void MergePdfs(IReadOnlyList<string> files)
     {
         var sorted = files.Order(StringComparer.CurrentCultureIgnoreCase).ToList();
+        var proposed = OutputPaths.ForGroup(sorted, Loc.T("Merged"), "pdf");
+        var output = Dialogs.AskPdfOutput(Path.GetDirectoryName(proposed)!, Path.GetFileNameWithoutExtension(proposed));
+        if (output is null) return;
         Enqueue(Loc.F("Merge {0} PDFs", files.Count), sorted, (_, _) =>
         {
-            var output = OutputPaths.ForGroup(sorted, Loc.T("Merged"), "pdf");
             PdfEngine.Merge(sorted, output);
             return Task.FromResult<IEnumerable<string>>([output]);
         });

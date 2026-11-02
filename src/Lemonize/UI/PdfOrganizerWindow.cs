@@ -432,10 +432,10 @@ public sealed class PdfOrganizerWindow : ThemedWindow
             return;
         }
         var files = _files;
-        var suffix = Loc.T("(organized)");
-        var merged = Loc.T("Merged");
-        Enqueue(files.Count == 1 ? Loc.F("Organize {0}", Path.GetFileName(files[0])) : Loc.T("Combine PDFs"), Refs(_pages),
-            () => files.Count == 1 ? OutputPaths.ForToolResult(files[0], suffix) : OutputPaths.ForGroup(files, merged, "pdf"));
+        var proposed = files.Count == 1 ? OutputPaths.ForToolResult(files[0], Loc.T("(organized)")) : OutputPaths.ForGroup(files, Loc.T("Merged"), "pdf");
+        var output = Dialogs.AskPdfOutput(Path.GetDirectoryName(proposed)!, Path.GetFileNameWithoutExtension(proposed));
+        if (output is null) return;
+        Enqueue(files.Count == 1 ? Loc.F("Organize {0}", Path.GetFileName(files[0])) : Loc.T("Combine PDFs"), Refs(_pages), () => output);
         Close();
     }
 

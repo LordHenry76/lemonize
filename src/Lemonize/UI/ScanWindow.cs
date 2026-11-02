@@ -615,7 +615,7 @@ public sealed class ScanWindow : ThemedWindow
         }
         var pages = ScanPages();
         var files = pages.Select(p => p.File).ToList();
-        var output = AskOutput(OutputPaths.DirectoryFor(files[0]), files.Count == 1 || _cards ? OutputPaths.BaseName(files[0]) : Loc.T("Scan"));
+        var output = Dialogs.AskPdfOutput(OutputPaths.DirectoryFor(files[0]), files.Count == 1 || _cards ? OutputPaths.BaseName(files[0]) : Loc.T("Scan"));
         if (output is null) return;
         if (_cards)
         {
@@ -672,7 +672,7 @@ public sealed class ScanWindow : ThemedWindow
         var saved = false;
         var organizer = new PdfOrganizerWindow([temp], pages =>
         {
-            var output = AskOutput(OutputPaths.DirectoryFor(files[0]), Loc.T("Scan"));
+            var output = Dialogs.AskPdfOutput(OutputPaths.DirectoryFor(files[0]), Loc.T("Scan"));
             if (output is null) return false;
             saved = true;
             JobQueue.Enqueue(pages.Count == 1 ? Loc.T("Scan 1 photo → PDF") : Loc.F("Scan {0} photos → PDF", pages.Count), files[0], (job, _) =>
@@ -727,29 +727,5 @@ public sealed class ScanWindow : ThemedWindow
         {
             // Only a temporary file: not worth bothering the user.
         }
-    }
-
-    /// <summary>Asks for the PDF's name; an existing file is replaced only once the user agrees. Null if cancelled.</summary>
-    private static string? AskOutput(string folder, string suggested)
-    {
-        var name = suggested;
-        while (true)
-        {
-            var typed = Dialogs.Prompt(Loc.T("Save PDF"), Loc.T("Name of the PDF:"), name);
-            if (typed is null) return null;
-            name = CleanFileName(typed);
-            if (name.Length == 0) continue;
-            var path = Path.Combine(folder, name + ".pdf");
-            if (!File.Exists(path) || Dialogs.Confirm(Loc.T("Save PDF"), Loc.F("{0} already exists. Replace it?", name + ".pdf"), Loc.T("Replace")))
-                return path;
-        }
-    }
-
-    private static string CleanFileName(string name)
-    {
-        name = name.Trim();
-        if (name.EndsWith(".pdf", StringComparison.OrdinalIgnoreCase)) name = name[..^4];
-        foreach (var c in Path.GetInvalidFileNameChars()) name = name.Replace(c, ' ');
-        return name.Trim().TrimEnd('.').Trim();
     }
 }

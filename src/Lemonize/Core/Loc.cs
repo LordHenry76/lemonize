@@ -93,6 +93,12 @@ public static class Loc
 
         // ---------- Output names ----------
         ["(compressed)"] = "(compresso)",
+        ["_original"] = "_originale",
+        ["Can't rename {0}. If it's open in another program, close it and try again."] = "Impossibile rinominare {0}. Se è aperto in un altro programma, chiudilo e riprova.",
+        ["Embedded images are re-compressed. The compressed PDF keeps the file's name; the original is kept as “name_original.pdf”."] =
+            "Le immagini incorporate vengono ricompresse. Il PDF compresso mantiene il nome del file; l'originale viene conservato come “nome_originale.pdf”.",
+        ["Images keep their format when possible; videos become MP4 (H.264). Results are saved as new files marked “(compressed)”. A compressed PDF keeps the file's name instead; the original is kept as “name_original.pdf”."] =
+            "Le immagini mantengono il formato quando possibile; i video diventano MP4 (H.264). I risultati vengono salvati come nuovi file contrassegnati “(compresso)”. Un PDF compresso invece mantiene il nome del file; l'originale viene conservato come “nome_originale.pdf”.",
         ["(edited)"] = "(modificato)",
         ["(clean)"] = "(pulito)",
         ["(normalized)"] = "(normalizzato)",

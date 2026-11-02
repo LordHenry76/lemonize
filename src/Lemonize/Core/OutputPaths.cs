@@ -139,6 +139,56 @@ public static class OutputPaths
         }
     }
 
+    /// <summary>
+    /// The new file takes the input's name and the input stays, renamed with <paramref name="originalSuffix"/>.
+    /// With a custom output folder the input stays where it is and only the new file goes there, under the same name.
+    /// Returns the new file's path. On failure the input is back under its own name.
+    /// </summary>
+    public static string ReplaceKeepingOriginal(string tempFile, string input, string originalSuffix)
+    {
+        var full = Path.GetFullPath(input);
+        var name = Path.GetFileName(full);
+        var folder = Path.GetFullPath(DirectoryFor(full));
+        if (!string.Equals(folder.TrimEnd(Path.DirectorySeparatorChar), Path.GetDirectoryName(full)!.TrimEnd(Path.DirectorySeparatorChar), StringComparison.OrdinalIgnoreCase))
+        {
+            var output = Unique(Path.Combine(folder, name));
+            File.Move(tempFile, output);
+            return output;
+        }
+
+        // Staged beside the input first: moving between drives is what can fail halfway, and it must not
+        // happen once the input has already been renamed.
+        var kept = Unique(Path.Combine(folder, BaseName(full) + originalSuffix + Path.GetExtension(full)));
+        var staged = Path.Combine(folder, $"~lemonize-{Guid.NewGuid():N}.tmp");
+        try
+        {
+            File.Move(tempFile, staged);
+            try
+            {
+                File.Move(full, kept);
+            }
+            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+            {
+                throw new InvalidOperationException(Loc.F("Can't rename {0}. If it's open in another program, close it and try again.", name), ex);
+            }
+            try
+            {
+                File.Move(staged, full);
+            }
+            catch
+            {
+                File.Move(kept, full);
+                throw;
+            }
+        }
+        catch
+        {
+            if (File.Exists(staged)) File.Delete(staged);
+            throw;
+        }
+        return full;
+    }
+
     public static string FormatSize(long bytes)
     {
         string[] units = ["B", "KB", "MB", "GB", "TB"];
