@@ -58,6 +58,8 @@ public sealed class PdfPageItem : INotifyPropertyChanged
 public sealed class PdfOrganizerWindow : ThemedWindow
 {
     private readonly IReadOnlyList<string> _files;
+    private readonly Func<IReadOnlyList<PdfPageRef>, bool>? _onSave;
+    private readonly IReadOnlyList<string>? _pageNames;
     private readonly ObservableCollection<PdfPageItem> _pages = [];
     private readonly ListBox _list = new() { SelectionMode = SelectionMode.Extended, AllowDrop = true };
     private readonly TextBlock _status = new() { VerticalAlignment = VerticalAlignment.Center };
@@ -66,10 +68,19 @@ public sealed class PdfOrganizerWindow : ThemedWindow
     private DragGhost? _ghost;
     private int _insertAt = -1;
 
-    public PdfOrganizerWindow(IReadOnlyList<string> files)
+    /// <param name="files">The PDFs whose pages are shown.</param>
+    /// <param name="onSave">
+    /// Set when another tool owns the result (the scan's review step): "Save PDF" hands it the final pages
+    /// instead of writing a file, and the window closes if it returns true. The source is then a temporary
+    /// file, so there is no "Extract selected", which would save beside it.
+    /// </param>
+    /// <param name="pageNames">Captions for the pages of a single PDF, in place of "p. 1".</param>
+    public PdfOrganizerWindow(IReadOnlyList<string> files, Func<IReadOnlyList<PdfPageRef>, bool>? onSave = null, IReadOnlyList<string>? pageNames = null)
     {
         _files = files;
-        Title = files.Count == 1 ? Loc.F("Organize · {0}", Path.GetFileName(files[0])) : Loc.F("Organize · {0} PDFs", files.Count);
+        _onSave = onSave;
+        _pageNames = pageNames;
+        Title = onSave is not null ? Loc.T("Order pages") : files.Count == 1 ? Loc.F("Organize · {0}", Path.GetFileName(files[0])) : Loc.F("Organize · {0} PDFs", files.Count);
         Width = 960;
         Height = 700;
         WindowStartupLocation = WindowStartupLocation.CenterScreen;
@@ -80,7 +91,7 @@ public sealed class PdfOrganizerWindow : ThemedWindow
         toolbar.Children.Add(Tool("", "Delete", Delete));
         toolbar.Children.Add(Tool("", "Move earlier", () => Move(-1)));
         toolbar.Children.Add(Tool("", "Move later", () => Move(1)));
-        toolbar.Children.Add(Tool("", "Extract selected", Extract));
+        if (onSave is null) toolbar.Children.Add(Tool("", "Extract selected", Extract));
 
         var footer = new DockPanel { Margin = new Thickness(16, 8, 16, 16) };
         var save = new Button { Content = "Save PDF", Style = (Style)FindResource("Primary"), MinWidth = 110 };
@@ -178,7 +189,7 @@ public sealed class PdfOrganizerWindow : ThemedWindow
             {
                 var count = await PdfEngine.PageCountAsync(file);
                 var prefix = _files.Count > 1 ? OutputPaths.BaseName(file) + " · " : "";
-                var items = Enumerable.Range(0, count).Select(i => new PdfPageItem(file, i, $"{prefix}p. {i + 1}")).ToList();
+                var items = Enumerable.Range(0, count).Select(i => new PdfPageItem(file, i, _pageNames is { } names && i < names.Count ? names[i] : $"{prefix}p. {i + 1}")).ToList();
                 foreach (var item in items) _pages.Add(item);
                 await PdfEngine.RenderEachAsync(file, null, 280, (i, png) => items[i].Thumb = ImageEngine.BitmapFromBytes(png));
             }
@@ -413,6 +424,11 @@ public sealed class PdfOrganizerWindow : ThemedWindow
         if (_pages.Count == 0)
         {
             Dialogs.Error(Loc.T("Save PDF"), Loc.T("There are no pages left."));
+            return;
+        }
+        if (_onSave is not null)
+        {
+            if (_onSave(Refs(_pages))) Close();
             return;
         }
         var files = _files;

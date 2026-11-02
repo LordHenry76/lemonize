@@ -373,6 +373,23 @@ await Check("scansiona documento: foglio storto trovato, raddrizzato su A4", asy
     Console.WriteLine($"      {OutputPaths.FormatSize(new FileInfo(o).Length)}, luminosità {mean:0.00}");
     return [o];
 });
+await Check("scansione riordinata prima di salvare: ordine nuovo, immagini non ricompresse", () =>
+{
+    // What the scan's review does: the two pages of scan-a4.pdf (portrait, landscape) swapped, then one deleted.
+    var o = P("scan-ordered.pdf");
+    PdfEngine.Assemble([new PdfPageRef(P("scan-a4.pdf"), 1, 0), new PdfPageRef(P("scan-a4.pdf"), 0, 0)], o);
+    using (var doc = PdfSharp.Pdf.IO.PdfReader.Open(o, PdfSharp.Pdf.IO.PdfDocumentOpenMode.Import))
+    {
+        var sizes = doc.Pages.Cast<PdfSharp.Pdf.PdfPage>().Select(p => $"{p.Width.Millimeter:0}×{p.Height.Millimeter:0}").ToList();
+        if (string.Join(" ", sizes) != "297×210 210×297") throw new Exception("pagine " + string.Join(" ", sizes));
+    }
+    var (before, after) = (new FileInfo(P("scan-a4.pdf")).Length, new FileInfo(o).Length);
+    if (Math.Abs(after - before) > before / 10) throw new Exception($"dimensione cambiata: {before} → {after}");
+    var single = P("scan-one.pdf");
+    PdfEngine.Assemble([new PdfPageRef(P("scan-a4.pdf"), 1, 90)], single);
+    if (PdfEngine.PageCount(single) != 1) throw new Exception("pagina eliminata ancora presente");
+    return One(o);
+});
 await Check("tono automatico: foto scura e ciano torna neutra", () =>
 {
     // Dim cyan "paper" with darker "text": red is squeezed low, so the paper comes out cyan until each channel is stretched.

@@ -19,7 +19,8 @@ namespace Lemonize.UI;
 /// <summary>
 /// Turns photos of paper documents into one A4 PDF: for each photo the sheet's corners are proposed and can be
 /// dragged into place, then every page is straightened and cleaned. In card mode the (up to two) photos are the
-/// front and back of an ID card, laid out together on one A4 page.
+/// front and back of an ID card, laid out together on one A4 page. With several sheets the scanned pages go
+/// through a review (<see cref="PdfOrganizerWindow"/>) before the PDF is saved.
 /// </summary>
 public sealed class ScanWindow : ThemedWindow
 {
@@ -76,6 +77,8 @@ public sealed class ScanWindow : ThemedWindow
     private Point _gripLast;
     private bool? _lockHorizontal;
     private Point? _panFrom;
+    private bool _busy;
+    private bool _closed;
 
     public ScanWindow(IReadOnlyList<string> files, bool cards = false)
     {
@@ -95,12 +98,18 @@ public sealed class ScanWindow : ThemedWindow
         Loaded += async (_, _) => await ShowPage(0);
         Closed += (_, _) =>
         {
+            _closed = true;
             foreach (var page in _pages)
                 lock (page) page.Display?.Dispose();
         };
     }
 
     private Page Current => _pages[_index];
+
+    /// <summary>Several sheets are reviewed before saving; everything else goes straight to the PDF's name.</summary>
+    private bool NeedsReview => !_cards && _pages.Count > 1;
+
+    private void UpdateSaveLabel() => _save.Content = Loc.T(NeedsReview ? "Order pages…" : "Save PDF");
 
     private void UpdateTitle() => Title = _cards ? Loc.T("Scan ID card")
         : _pages.Count == 1 ? Loc.F("Scan document · {0}", Path.GetFileName(_pages[0].File)) : Loc.F("Scan document · {0} photos", _pages.Count);
@@ -277,6 +286,7 @@ public sealed class ScanWindow : ThemedWindow
         _remove.IsEnabled = _pages.Count > 1;
         _swap.IsEnabled = _pages.Count == 2;
         _autoTone.IsChecked = page.AutoTone;
+        UpdateSaveLabel();
 
         if (page.Display is null)
         {
@@ -551,6 +561,7 @@ public sealed class ScanWindow : ThemedWindow
         if (e.Key == Key.Enter)
         {
             e.Handled = true;
+            if (_busy) return;
             if (_index < _pages.Count - 1) _ = ShowPage(_index + 1);
             else Save();
             return;
@@ -586,13 +597,23 @@ public sealed class ScanWindow : ThemedWindow
         }, TaskScheduler.FromCurrentSynchronizationContext());
     }
 
-    private void Save()
+    private List<ScanPage> ScanPages()
     {
-        if (_pages.Count == 0) return;
         var look = Look;
         var whitening = _whitening.Value / 100;
-        var pages = _pages.Select(p => new ScanPage(p.File, p.Rotation,
+        return _pages.Select(p => new ScanPage(p.File, p.Rotation,
             p.Corners?.Select(c => new Point(c.X * p.Scale, c.Y * p.Scale)).ToArray(), look, whitening, p.AutoTone)).ToList();
+    }
+
+    private void Save()
+    {
+        if (_pages.Count == 0 || _busy) return;
+        if (NeedsReview)
+        {
+            _ = ReviewThenSave();
+            return;
+        }
+        var pages = ScanPages();
         var files = pages.Select(p => p.File).ToList();
         var output = AskOutput(OutputPaths.DirectoryFor(files[0]), files.Count == 1 || _cards ? OutputPaths.BaseName(files[0]) : Loc.T("Scan"));
         if (output is null) return;
@@ -607,13 +628,105 @@ public sealed class ScanWindow : ThemedWindow
             Close();
             return;
         }
-        JobQueue.Enqueue(pages.Count == 1 ? Loc.T("Scan 1 photo → PDF") : Loc.F("Scan {0} photos → PDF", pages.Count), files[0], (job, _) =>
+        JobQueue.Enqueue(Loc.T("Scan 1 photo → PDF"), files[0], (job, _) =>
         {
             ScanEngine.ToPdf(pages, output, job.Report);
             job.Outputs.Add(output);
             return Task.CompletedTask;
         });
         Close();
+    }
+
+    /// <summary>
+    /// Scans every sheet into a temporary PDF and opens it for reordering, rotating and deleting pages. Saving there
+    /// asks for the name and writes the final PDF, reusing the scanned pages as they are; closing it comes back here
+    /// with the corners and settings untouched.
+    /// </summary>
+    private async Task ReviewThenSave()
+    {
+        _busy = true;
+        var content = (UIElement)Content;
+        content.IsEnabled = false;
+        var scans = ScanPages();
+        var temp = AppPaths.NewTempFile("pdf");
+        ShowPreparing(0);
+        try
+        {
+            await Task.Run(() => ScanEngine.ToPdf(scans, temp, value => Dispatcher.BeginInvoke(() => ShowPreparing(value))));
+        }
+        catch (Exception ex)
+        {
+            DeleteQuietly(temp);
+            if (_closed) return;
+            Restore();
+            Dialogs.Error(Loc.T("Can't prepare the pages"), ex.Message);
+            return;
+        }
+        if (_closed)
+        {
+            DeleteQuietly(temp);
+            return;
+        }
+
+        var files = scans.Select(s => s.File).ToList();
+        var saved = false;
+        var organizer = new PdfOrganizerWindow([temp], pages =>
+        {
+            var output = AskOutput(OutputPaths.DirectoryFor(files[0]), Loc.T("Scan"));
+            if (output is null) return false;
+            saved = true;
+            JobQueue.Enqueue(pages.Count == 1 ? Loc.T("Scan 1 photo → PDF") : Loc.F("Scan {0} photos → PDF", pages.Count), files[0], (job, _) =>
+            {
+                try
+                {
+                    PdfEngine.Assemble(pages, output);
+                    job.Outputs.Add(output);
+                }
+                finally
+                {
+                    DeleteQuietly(temp);
+                }
+                return Task.CompletedTask;
+            });
+            return true;
+        }, files.Select(OutputPaths.BaseName).ToList());
+        organizer.Closed += (_, _) =>
+        {
+            if (saved)
+            {
+                Close();
+                return;
+            }
+            DeleteQuietly(temp);
+            Restore();
+            if (!App.IsExiting && !_closed) ShowOnTop();
+        };
+        organizer.ShowOnTop();
+        Hide();
+
+        void Restore()
+        {
+            _busy = false;
+            content.IsEnabled = true;
+            UpdateSaveLabel();
+        }
+    }
+
+    private void ShowPreparing(double progress)
+    {
+        if (_busy) _save.Content = Loc.F("Preparing pages… {0}%", (int)(progress * 100));
+    }
+
+    private static void DeleteQuietly(string file)
+    {
+        try
+        {
+            File.Delete(file);
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+            // Only a temporary file: not worth bothering the user.
+        }
     }
 
     /// <summary>Asks for the PDF's name; an existing file is replaced only once the user agrees. Null if cancelled.</summary>
