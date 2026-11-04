@@ -7,6 +7,8 @@
 # Requires the GitHub CLI (gh).
 param([string]$Version)
 $ErrorActionPreference = 'Stop'
+# git prints UTF-8: without this, accents in the notes break on consoles using an OEM code page.
+[Console]::OutputEncoding = [System.Text.UTF8Encoding]::new($false)
 $root = $PSScriptRoot
 
 if (-not $Version) {
