@@ -15,6 +15,7 @@
         <!-- Header -->
         <DockPanel Margin="0,0,0,18">
             <StackPanel Orientation="Horizontal" DockPanel.Dock="Right" VerticalAlignment="Center">
+                <Button x:Name="UpdateButton" Style="{StaticResource Primary}" Click="OnSeeUpdate" Margin="0,0,8,0" Visibility="Collapsed" />
                 <Button Click="OnSettings" ToolTip="Settings">
                     <StackPanel Orientation="Horizontal">
                         <TextBlock Text="&#xE713;" Style="{StaticResource Icon}" FontSize="14" Margin="0,0,8,0" />

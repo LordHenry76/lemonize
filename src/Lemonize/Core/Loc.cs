@@ -451,6 +451,30 @@ public static class Loc
         ["  ·  selection {0} → {1}"] = "  ·  selezione {0} → {1}",
         ["  ·  {0} bleeps"] = "  ·  {0} bip",
         ["  ·  1 bleep"] = "  ·  1 bip",
+
+        // ---------- Updates ----------
+        ["Update available"] = "Aggiornamento disponibile",
+        ["Lemonize {0} is available"] = "È disponibile Lemonize {0}",
+        ["You have version {0}."] = "Hai la versione {0}.",
+        ["Lemonize closes and reopens by itself. Save any work still open first."] = "Lemonize si chiude e si riapre da solo. Prima salva il lavoro ancora aperto.",
+        ["Skip this version"] = "Salta questa versione",
+        ["Later"] = "Più tardi",
+        ["Update now"] = "Aggiorna ora",
+        ["Update Lemonize?"] = "Aggiornare Lemonize?",
+        ["Some files are still being processed. Updating cancels them."] = "Alcuni file sono ancora in lavorazione. L'aggiornamento li annulla.",
+        ["Downloading the update…"] = "Scaricamento dell'aggiornamento…",
+        ["Downloading the update… {0}%"] = "Scaricamento dell'aggiornamento… {0}%",
+        ["The downloaded file is damaged. Please try again."] = "Il file scaricato è danneggiato. Riprova.",
+        ["Update failed"] = "Aggiornamento non riuscito",
+        ["{0}\n\nYou can download the installer from GitHub instead."] = "{0}\n\nPuoi scaricare l'installer da GitHub.",
+        ["Open GitHub"] = "Apri GitHub",
+        ["Update to version {0}…"] = "Aggiorna alla versione {0}…",
+        ["Click to see what's new and update."] = "Fai clic per vedere le novità e aggiornare.",
+        ["Check now"] = "Controlla ora",
+        ["Check for new versions automatically"] = "Controlla automaticamente se ci sono nuove versioni",
+        ["Updates"] = "Aggiornamenti",
+        ["Lemonize {0} is the latest version."] = "Lemonize {0} è l'ultima versione.",
+        ["Couldn't check for updates"] = "Impossibile controllare gli aggiornamenti",
     };
 
     public static bool IsItalian { get; private set; }

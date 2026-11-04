@@ -39,6 +39,8 @@ public sealed class Settings
     public string? FfmpegPath { get; set; }
     public string? LastMoveFolder { get; set; }
     public bool FirstRunDone { get; set; }
+    public bool CheckForUpdates { get; set; } = true;
+    public string? SkippedUpdateVersion { get; set; }
 
     /// <summary>"auto" (follow Windows), "en" or "it".</summary>
     public string Language { get; set; } = "auto";

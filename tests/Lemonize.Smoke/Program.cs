@@ -602,6 +602,30 @@ if (args.FirstOrDefault(a => a.StartsWith("--heic=")) is { } heicArg)
     }
 }
 
+// ---------- Updates ----------
+void Expect(string name, bool ok, string detail = "")
+{
+    results.Add((name, ok, detail));
+    Console.WriteLine($"{(ok ? "OK  " : "FAIL")} {name}  {detail}");
+}
+const string ReleaseJson = """
+    { "tag_name": "v1.2.10",
+      "body": "### English\n\n**What's new:** Thing\n\nDetails `x`\n\n**Update:** download it\n\n---\n\n### Italiano\n\n**Novità:** Cosa\n\n**Aggiornamento:** scaricalo\n\n🤖 Generated",
+      "assets": [ { "name": "Lemonize-Setup-1.2.10.exe", "digest": "sha256:abc",
+                    "browser_download_url": "https://github.com/LordHenry76/lemonize/releases/download/v1.2.10/Lemonize-Setup-1.2.10.exe" } ] }
+    """;
+Expect("Update: 1.0.10 newer than 1.0.9", Updater.IsNewer("1.0.10", "1.0.9"));
+Expect("Update: same version not newer", !Updater.IsNewer("1.0.9", "1.0.9"));
+Expect("Update: older version not newer", !Updater.IsNewer("1.0.8", "1.0.9"));
+Expect("Update: unreadable version ignored", !Updater.IsNewer("beta", "1.0.9"));
+var parsed = Updater.ParseRelease(ReleaseJson, "1.2.9", italian: false);
+Expect("Update: release found", parsed is { Version: "1.2.10", Sha256: "abc" }, parsed?.ToString() ?? "null");
+Expect("Update: English notes", parsed?.Notes == "What's new: Thing\n\nDetails x", parsed?.Notes ?? "");
+Expect("Update: Italian notes", Updater.ParseRelease(ReleaseJson, "1.2.9", italian: true)?.Notes == "Novità: Cosa");
+Expect("Update: current version gets no update", Updater.ParseRelease(ReleaseJson, "1.2.10", false) is null);
+Expect("Update: release without installer ignored", Updater.ParseRelease(ReleaseJson.Replace("\"Lemonize-Setup-1.2.10.exe\"", "\"other.exe\""), "1.2.9", false) is null);
+Expect("Update: installer from elsewhere refused", Updater.ParseRelease(ReleaseJson.Replace("github.com/LordHenry76", "example.com/x"), "1.2.9", false) is null);
+
 var failed = results.Where(r => !r.Ok).ToList();
 Console.WriteLine($"\n{results.Count - failed.Count}/{results.Count} passed");
 foreach (var f in failed) Console.WriteLine($"FAIL {f.Name}: {f.Detail}");

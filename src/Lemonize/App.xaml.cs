@@ -16,6 +16,8 @@ public partial class App
     // still holds an old pipe can never swallow commands meant for the live instance.
     private const string PipePrefix = "Lemonize.Pipe.v2.";
     private static readonly string InstanceFile = Path.Combine(AppPaths.LocalData, "instance.pid");
+    private static readonly TimeSpan UpdateFirstCheckDelay = TimeSpan.FromSeconds(30);
+    private static readonly TimeSpan UpdateCheckInterval = TimeSpan.FromHours(6);
 
     private static MouseHook? _hook;
     private static Forms.NotifyIcon? _tray;
@@ -24,6 +26,8 @@ public partial class App
     private Mutex? _mutex;
     private readonly List<string> _pendingWheel = [];
     private DispatcherTimer? _wheelGather;
+    private Forms.ToolStripMenuItem? _updateItem;
+    private string? _notifiedUpdate;
 
     public static WheelWindow Wheel { get; private set; } = null!;
     public static bool IsExiting { get; private set; }
@@ -60,6 +64,8 @@ public partial class App
         CreateTray();
         ApplyHookSetting();
         _ = Task.Run(ListenAsync);
+        Updater.AvailableChanged += OnUpdateAvailableChanged;
+        _ = WatchForUpdatesAsync();
 
         var background = e.Args.Contains("--background");
         if (!background || !Settings.Current.FirstRunDone) ShowMain();
@@ -145,11 +151,57 @@ public partial class App
         Current.Shutdown();
     }
 
+    // ---------- Updates ----------
+
+    /// <summary>Lemonize can stay in the tray for days, so it looks again from time to time, not only at startup.</summary>
+    private static async Task WatchForUpdatesAsync()
+    {
+        await Task.Delay(UpdateFirstCheckDelay);
+        Updater.CleanDownloads();
+        while (true)
+        {
+            if (Settings.Current.CheckForUpdates)
+            {
+                try
+                {
+                    await Updater.CheckAsync();
+                }
+                catch (Exception ex) when (ex is not OutOfMemoryException)
+                {
+                    // Offline, or GitHub is unavailable: nothing to bother the user with.
+                    Diag.Log($"updater: check failed: {ex.Message}");
+                }
+            }
+            await Task.Delay(UpdateCheckInterval);
+        }
+    }
+
+    private void OnUpdateAvailableChanged()
+    {
+        var update = Updater.Available;
+        if (_updateItem is not null)
+        {
+            _updateItem.Visible = update is not null;
+            if (update is not null) _updateItem.Text = Loc.F("Update to version {0}…", update.Version);
+        }
+        if (update is null || update.Version == _notifiedUpdate) return;
+        _notifiedUpdate = update.Version;
+        _tray?.ShowBalloonTip(10_000, Loc.F("Lemonize {0} is available", update.Version), Loc.T("Click to see what's new and update."), Forms.ToolTipIcon.Info);
+    }
+
+    private static void OpenUpdate()
+    {
+        if (Updater.Available is { } update) UpdateWindow.Open(update);
+    }
+
     // ---------- Tray ----------
 
     private void CreateTray()
     {
         var menu = new Forms.ContextMenuStrip();
+        _updateItem = new Forms.ToolStripMenuItem { Visible = false };
+        _updateItem.Click += (_, _) => OpenUpdate();
+        menu.Items.Add(_updateItem);
         menu.Items.Add(Loc.T("Open Lemonize"), null, (_, _) => ShowMain());
         menu.Items.Add(Loc.T("Show progress"), null, (_, _) => _progress?.Show());
         var pause = new Forms.ToolStripMenuItem(Loc.T("Drag wheel enabled")) { Checked = Settings.Current.EnableDragWheel, CheckOnClick = true };
@@ -173,6 +225,7 @@ public partial class App
             ContextMenuStrip = menu,
             Visible = true,
         };
+        _tray.BalloonTipClicked += (_, _) => OpenUpdate();
         _tray.MouseClick += (_, args) =>
         {
             if (args.Button == Forms.MouseButtons.Left) ShowMain();

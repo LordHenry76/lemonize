@@ -15,6 +15,10 @@
         <CheckBox x:Name="ContextMenuBox" Content="Add “Lemonize…” to the File Explorer right-click menu" />
         <CheckBox x:Name="ProgressWin" Content="Show the progress window" />
         <CheckBox x:Name="Reveal" Content="Show converted files in File Explorer when done" />
+        <DockPanel>
+            <Button x:Name="CheckNow" Content="Check now" DockPanel.Dock="Right" Click="OnCheckNow" Margin="8,0,0,0" />
+            <CheckBox x:Name="AutoUpdate" Content="Check for new versions automatically" VerticalAlignment="Center" />
+        </DockPanel>
 
         <TextBlock Text="Output" Style="{StaticResource Heading}" Margin="0,18,0,8" />
         <RadioButton x:Name="Beside" Content="Save next to the original file" GroupName="Out" />

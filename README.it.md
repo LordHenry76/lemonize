@@ -12,6 +12,10 @@ Convertitore di file per Windows ispirato a *Tangerine* per macOS. Trascini file
 
 Altri modi di usarla: la finestra principale (trascina oppure clicca per scegliere i file) e, se attivato nelle impostazioni, la voce **Lemonize…** nel menu del tasto destro di Esplora file. La ruota si usa anche con il mouse (clic) e con Tab/Esc.
 
+## Aggiornamenti
+
+Lemonize controlla su GitHub se c'è una nuova release poco dopo l'avvio e poi ogni 6 ore. Se c'è, mostra una notifica, una voce nel menu della tray e un pulsante nella finestra principale: *Aggiorna ora* scarica l'installer, lo verifica, lo installa e riapre Lemonize, conservando le impostazioni. Viene letto solo l'elenco pubblico delle release: non viene inviato nulla su di te o sui tuoi file. Si può disattivare in *Impostazioni*, dove *Controlla ora* fa il controllo a richiesta.
+
 ## Lingue
 
 Italiano e inglese. Di default la lingua segue quella di Windows. Si può forzare in *Impostazioni → Lingua*; la modifica vale dal riavvio successivo.

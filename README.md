@@ -12,6 +12,10 @@ A file converter for Windows inspired by *Tangerine* for macOS. Drag files from 
 
 Other ways to use it: the main window (drag files onto it or click to pick them) and, when enabled in the settings, the **Lemonize…** entry in File Explorer's right-click menu. The wheel also works with the mouse (click) and with Tab/Esc.
 
+## Updates
+
+Lemonize looks for a new release on GitHub shortly after starting and then every 6 hours. When there is one it shows a notification, an entry in the tray menu and a button in the main window: *Update now* downloads the installer, checks it, installs it and reopens Lemonize, keeping your settings. Only the public release data is read; nothing about you or your files is sent. You can turn this off in *Settings*, where *Check now* looks on demand.
+
 ## Languages
 
 English and Italian. By default the language follows Windows; it can be forced in *Settings → Language* and the change applies from the next restart.

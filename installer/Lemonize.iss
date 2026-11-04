@@ -101,10 +101,14 @@ begin
 end;
 
 // Silent installs (e.g. /VERYSILENT) skip the [Run] entry, so apply the tasks here as well.
+// /RELAUNCH=1 comes from Lemonize's own updater: the user asked for the update, so reopen the window.
 procedure CurStepChanged(CurStep: TSetupStep);
 var
   ResultCode: Integer;
 begin
-  if (CurStep = ssPostInstall) and WizardSilent and (LaunchArgs('') <> '') then
+  if (CurStep <> ssPostInstall) or not WizardSilent then Exit;
+  if ExpandConstant('{param:relaunch|0}') = '1' then
+    Exec(ExpandConstant('{app}\Lemonize.exe'), LaunchArgs(''), '', SW_SHOWNORMAL, ewNoWait, ResultCode)
+  else if LaunchArgs('') <> '' then
     Exec(ExpandConstant('{app}\Lemonize.exe'), LaunchArgs('') + ' --background', '', SW_HIDE, ewNoWait, ResultCode);
 end;

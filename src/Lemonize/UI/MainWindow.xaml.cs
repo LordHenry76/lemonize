@@ -16,6 +16,8 @@ public partial class MainWindow
     {
         InitializeComponent();
         Activated += (_, _) => Refresh();
+        Updater.AvailableChanged += ShowUpdate;
+        ShowUpdate();
     }
 
     /// <summary>Closing the hub only hides it; Lemonize keeps running in the tray.</summary>
@@ -35,6 +37,17 @@ public partial class MainWindow
         AddComponent("Ghostscript", ToolLocator.Ghostscript is not null, "stronger PDF compression", optional: true);
         AddComponent("Pandoc", ToolLocator.Pandoc is not null, "richer DOCX ↔ EPUB", optional: true);
         FfmpegButton.Visibility = ToolLocator.Ffmpeg is null ? Visibility.Visible : Visibility.Collapsed;
+    }
+
+    private void ShowUpdate()
+    {
+        UpdateButton.Visibility = Updater.Available is null ? Visibility.Collapsed : Visibility.Visible;
+        if (Updater.Available is { } update) UpdateButton.Content = Loc.F("Update to version {0}…", update.Version);
+    }
+
+    private void OnSeeUpdate(object sender, RoutedEventArgs e)
+    {
+        if (Updater.Available is { } update) UpdateWindow.Open(update);
     }
 
     private void AddComponent(string name, bool ready, string purpose, bool optional = false)

@@ -19,6 +19,7 @@ public partial class SettingsWindow
         ContextMenuBox.IsChecked = s.ExplorerContextMenu;
         ProgressWin.IsChecked = s.ShowProgressWindow;
         Reveal.IsChecked = s.RevealWhenDone;
+        AutoUpdate.IsChecked = s.CheckForUpdates;
         Beside.IsChecked = s.OutputLocation == OutputLocation.BesideOriginal;
         Custom.IsChecked = s.OutputLocation == OutputLocation.CustomFolder;
         _customFolder = s.CustomOutputFolder;
@@ -57,6 +58,26 @@ public partial class SettingsWindow
         if (dialog.ShowDialog(this) == true) FfmpegPath.Text = dialog.FileName;
     }
 
+    private async void OnCheckNow(object sender, RoutedEventArgs e)
+    {
+        CheckNow.IsEnabled = false;
+        try
+        {
+            // A version skipped earlier is offered here too: the user is asking.
+            if (await Updater.CheckAsync() is { } update) UpdateWindow.Open(update);
+            else Dialogs.Message(Loc.T("Updates"), Loc.F("Lemonize {0} is the latest version.", AppInfo.Version));
+        }
+        catch (Exception ex) when (ex is not OutOfMemoryException)
+        {
+            Diag.Log($"updater: manual check failed: {ex.Message}");
+            Dialogs.Error(Loc.T("Couldn't check for updates"), ex.Message);
+        }
+        finally
+        {
+            CheckNow.IsEnabled = true;
+        }
+    }
+
     private void OnCancel(object sender, RoutedEventArgs e) => Close();
 
     private void OnSave(object sender, RoutedEventArgs e)
@@ -67,6 +88,7 @@ public partial class SettingsWindow
         s.ExplorerContextMenu = ContextMenuBox.IsChecked == true;
         s.ShowProgressWindow = ProgressWin.IsChecked == true;
         s.RevealWhenDone = Reveal.IsChecked == true;
+        s.CheckForUpdates = AutoUpdate.IsChecked == true;
         s.OutputLocation = Custom.IsChecked == true && _customFolder is not null ? OutputLocation.CustomFolder : OutputLocation.BesideOriginal;
         s.CustomOutputFolder = _customFolder;
         s.ToolsOverwriteOriginal = Overwrite.IsChecked == true;
