@@ -26,6 +26,9 @@ public sealed class ScanWindow : ThemedWindow
 {
     private const int DisplayMax = 2000;
     private const double HandleReach = 16;
+    private static readonly Thickness CompactPadding = new(8, 4, 8, 4);
+    private static readonly GridLength Fill = new(1, GridUnitType.Star);
+    private static readonly GridLength LabelWidth = new(100);
 
     private sealed class Page(string file)
     {
@@ -86,7 +89,8 @@ public sealed class ScanWindow : ThemedWindow
         _pages = [.. files.Order(StringComparer.CurrentCultureIgnoreCase).Take(cards ? 2 : int.MaxValue).Select(f => new Page(f))];
         UpdateTitle();
         Width = 1180;
-        Height = 820;
+        Height = Math.Min(820, SystemParameters.WorkArea.Height);
+        MinHeight = 560;
         WindowStartupLocation = WindowStartupLocation.CenterScreen;
 
         _previewTimer.Tick += (_, _) =>
@@ -118,13 +122,14 @@ public sealed class ScanWindow : ThemedWindow
 
     private UIElement BuildLayout()
     {
-        var side = new StackPanel { Width = 260, Margin = new Thickness(12) };
+        var side = new StackPanel();
         _pageLabel.Style = (Style)FindResource("Heading");
         side.Children.Add(_pageLabel);
         _fileLabel.Style = (Style)FindResource("Dim");
         _fileLabel.Margin = new Thickness(0, 0, 0, 8);
         side.Children.Add(_fileLabel);
 
+        _previous.Padding = _next.Padding = CompactPadding;
         var navigation = new System.Windows.Controls.Primitives.UniformGrid { Columns = 2 };
         _next.Margin = new Thickness(6, 0, 0, 0);
         navigation.Children.Add(_previous);
@@ -133,24 +138,28 @@ public sealed class ScanWindow : ThemedWindow
         _next.Click += async (_, _) => await ShowPage(_index + 1);
         side.Children.Add(navigation);
 
-        side.Children.Add(new TextBlock { Text = _cards ? "Card" : "Sheet", Style = (Style)FindResource("Heading"), Margin = new Thickness(0, 18, 0, 8) });
-        var transform = new WrapPanel();
-        transform.Children.Add(SmallButton("", "Rotate left", () => Rotate(-90)));
-        transform.Children.Add(SmallButton("", "Rotate right", () => Rotate(90), mirror: true));
-        side.Children.Add(transform);
-        var detect = new Button { Content = _cards ? "Find the card again" : "Find the sheet again", HorizontalAlignment = HorizontalAlignment.Stretch, Margin = new Thickness(0, 0, 0, 6) };
+        side.Children.Add(new TextBlock { Text = _cards ? "Card" : "Sheet", Style = (Style)FindResource("Heading"), Margin = new Thickness(0, 12, 0, 6) });
+        _remove.Content = _cards ? "Remove this side" : "Remove page";
+        _remove.Padding = CompactPadding;
+        _remove.Click += async (_, _) => await RemovePage();
+        side.Children.Add(Row(
+            (SmallButton("", "Rotate left", () => Rotate(-90)), GridLength.Auto),
+            (SmallButton("", "Rotate right", () => Rotate(90), mirror: true), GridLength.Auto),
+            (_remove, Fill)));
+        var detect = new Button { Content = _cards ? "Find the card again" : "Find the sheet again", Padding = CompactPadding };
         detect.Click += (_, _) => SetCorners(Detect(Current));
-        side.Children.Add(detect);
-        var whole = new Button { Content = "Whole photo", HorizontalAlignment = HorizontalAlignment.Stretch, Margin = new Thickness(0, 0, 0, 6) };
+        var whole = new Button { Content = "Whole photo", Padding = CompactPadding, Margin = new Thickness(6, 0, 0, 0) };
         whole.Click += (_, _) =>
         {
             if (Current.Display is { } d) SetCorners([new(0, 0), new(d.Width, 0), new(d.Width, d.Height), new(0, d.Height)]);
         };
-        side.Children.Add(whole);
+        var find = Row((detect, Fill), (whole, GridLength.Auto));
+        find.Margin = new Thickness(0, 6, 0, 0);
+        side.Children.Add(find);
         if (_cards)
         {
-            _swap.HorizontalAlignment = HorizontalAlignment.Stretch;
-            _swap.Margin = new Thickness(0, 0, 0, 6);
+            _swap.Padding = CompactPadding;
+            _swap.Margin = new Thickness(0, 6, 0, 0);
             _swap.Click += async (_, _) =>
             {
                 _pages.Reverse();
@@ -158,12 +167,8 @@ public sealed class ScanWindow : ThemedWindow
             };
             side.Children.Add(_swap);
         }
-        _remove.Content = _cards ? "Remove this side" : "Remove page";
-        _remove.HorizontalAlignment = HorizontalAlignment.Stretch;
-        _remove.Click += async (_, _) => await RemovePage();
-        side.Children.Add(_remove);
 
-        side.Children.Add(new TextBlock { Text = "Tone", Style = (Style)FindResource("Heading"), Margin = new Thickness(0, 18, 0, 8) });
+        _autoTone.Margin = new Thickness(0, 14, 0, 0);
         _autoTone.ToolTip = _cards
             ? "Fixes dark photos and color casts, like Photoshop's Auto Tone. Applies to this side only."
             : "Fixes dark photos and color casts, like Photoshop's Auto Tone. Applies to this page only.";
@@ -176,7 +181,6 @@ public sealed class ScanWindow : ThemedWindow
 
         var look = new StackPanel { Visibility = _cards ? Visibility.Collapsed : Visibility.Visible };
         side.Children.Add(look);
-        look.Children.Add(new TextBlock { Text = "Look", Style = (Style)FindResource("Heading"), Margin = new Thickness(0, 18, 0, 8) });
         _look.ItemsSource = new[] { Loc.T("Black and white"), Loc.T("Color"), Loc.T("Original") };
         _look.SelectedIndex = 0;
         _look.SelectionChanged += (_, _) =>
@@ -184,8 +188,10 @@ public sealed class ScanWindow : ThemedWindow
             _whitening.IsEnabled = Look != ScanLook.Original;
             UpdateResult();
         };
-        look.Children.Add(_look);
-        var whiteningLabel = new TextBlock { Style = (Style)FindResource("Dim"), Margin = new Thickness(0, 10, 0, 0) };
+        var lookRow = Row((new TextBlock { Text = "Look", Style = (Style)FindResource("Dim"), VerticalAlignment = VerticalAlignment.Center }, LabelWidth), (_look, Fill));
+        lookRow.Margin = new Thickness(0, 10, 0, 0);
+        look.Children.Add(lookRow);
+        var whiteningLabel = new TextBlock { Style = (Style)FindResource("Dim"), VerticalAlignment = VerticalAlignment.Center, TextWrapping = TextWrapping.NoWrap };
         void UpdateWhiteningLabel() => whiteningLabel.Text = $"{Loc.T("Whitening")} · {_whitening.Value:0}";
         _whitening.ValueChanged += (_, _) =>
         {
@@ -194,20 +200,31 @@ public sealed class ScanWindow : ThemedWindow
             _previewTimer.Start();
         };
         UpdateWhiteningLabel();
-        look.Children.Add(whiteningLabel);
-        look.Children.Add(_whitening);
+        _whitening.VerticalAlignment = VerticalAlignment.Center;
+        var whiteningRow = Row((whiteningLabel, LabelWidth), (_whitening, Fill));
+        whiteningRow.Margin = new Thickness(0, 8, 0, 0);
+        look.Children.Add(whiteningRow);
 
-        side.Children.Add(new TextBlock { Text = "Result", Style = (Style)FindResource("Dim"), Margin = new Thickness(0, 14, 0, 6) });
-        side.Children.Add(new Border
+        var resultLabel = new TextBlock { Text = "Result", Style = (Style)FindResource("Dim"), Margin = new Thickness(0, 14, 0, 6) };
+        var resultBox = new Border
         {
-            Height = 250, Background = new SolidColorBrush(Color.FromRgb(0x10, 0x10, 0x12)), CornerRadius = new CornerRadius(8), Padding = new Thickness(8),
+            Background = new SolidColorBrush(Color.FromRgb(0x10, 0x10, 0x12)), CornerRadius = new CornerRadius(8), Padding = new Thickness(8),
             Child = _result,
-        });
+        };
 
         _save.Style = (Style)FindResource("Primary");
-        _save.Margin = new Thickness(0, 14, 0, 0);
+        _save.Margin = new Thickness(0, 12, 0, 0);
         _save.Click += (_, _) => Save();
-        side.Children.Add(_save);
+
+        // The controls keep their height, Save stays at the bottom and the preview takes whatever is left.
+        var column = new DockPanel { Width = 260, Margin = new Thickness(12) };
+        DockPanel.SetDock(side, Dock.Top);
+        DockPanel.SetDock(resultLabel, Dock.Top);
+        DockPanel.SetDock(_save, Dock.Bottom);
+        column.Children.Add(side);
+        column.Children.Add(resultLabel);
+        column.Children.Add(_save);
+        column.Children.Add(resultBox);
 
         // Stage
         _image.RenderTransform = _transform;
@@ -253,18 +270,29 @@ public sealed class ScanWindow : ThemedWindow
         stage.Children.Add(stageGrid);
 
         var root = new DockPanel();
-        var sideScroll = new ScrollViewer { Content = side, VerticalScrollBarVisibility = ScrollBarVisibility.Auto };
-        DockPanel.SetDock(sideScroll, Dock.Right);
-        root.Children.Add(sideScroll);
+        DockPanel.SetDock(column, Dock.Right);
+        root.Children.Add(column);
         root.Children.Add(stage);
         return root;
+    }
+
+    private static Grid Row(params (UIElement Element, GridLength Width)[] cells)
+    {
+        var row = new Grid();
+        foreach (var (element, width) in cells)
+        {
+            Grid.SetColumn(element, row.ColumnDefinitions.Count);
+            row.ColumnDefinitions.Add(new ColumnDefinition { Width = width });
+            row.Children.Add(element);
+        }
+        return row;
     }
 
     private Button SmallButton(string glyph, string tip, Action action, bool mirror = false)
     {
         var icon = new TextBlock { Text = glyph, FontFamily = (FontFamily)FindResource("IconFont"), FontSize = 15, RenderTransformOrigin = new Point(0.5, 0.5) };
         if (mirror) icon.RenderTransform = new ScaleTransform(-1, 1);
-        var button = new Button { Content = icon, ToolTip = tip, Margin = new Thickness(0, 0, 6, 6), Padding = new Thickness(10, 8, 10, 8) };
+        var button = new Button { Content = icon, ToolTip = tip, Margin = new Thickness(0, 0, 6, 0), Padding = CompactPadding };
         button.Click += (_, _) => action();
         return button;
     }
