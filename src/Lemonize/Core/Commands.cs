@@ -127,14 +127,40 @@ public static class Commands
     private static void MergePdfs(IReadOnlyList<string> files)
     {
         var sorted = files.Order(StringComparer.CurrentCultureIgnoreCase).ToList();
+        if (AskFitA4(sorted) is not { } fitA4) return;
         var proposed = OutputPaths.ForGroup(sorted, Loc.T("Merged"), "pdf");
         var output = Dialogs.AskPdfOutput(Path.GetDirectoryName(proposed)!, Path.GetFileNameWithoutExtension(proposed));
         if (output is null) return;
         Enqueue(Loc.F("Merge {0} PDFs", files.Count), sorted, (_, _) =>
         {
-            PdfEngine.Merge(sorted, output);
+            PdfEngine.Merge(sorted, output, fitA4);
             return Task.FromResult<IEnumerable<string>>([output]);
         });
+    }
+
+    /// <summary>
+    /// When some pages are larger than A4 (typically scans saved without their resolution), asks whether to
+    /// shrink them. False when there are none or the user keeps them; null when the user closes the question.
+    /// </summary>
+    private static bool? AskFitA4(IReadOnlyList<string> files)
+    {
+        List<PdfPageSize> sizes;
+        try
+        {
+            sizes = files.SelectMany(PdfEngine.PageSizes).ToList();
+        }
+        catch
+        {
+            return false; // An unreadable PDF: the merge itself reports it.
+        }
+        var oversize = sizes.Where(s => s.IsLargerThanA4).ToList();
+        if (oversize.Count == 0) return false;
+        var largest = oversize.MaxBy(s => s.WidthMm * s.HeightMm);
+        var message = oversize.Count == 1
+            ? Loc.F("1 page of {0} is larger than A4 ({1}).", sizes.Count, largest)
+            : Loc.F("{0} pages of {1} are larger than A4 (the largest is {2}).", oversize.Count, sizes.Count, largest);
+        message += Environment.NewLine + Environment.NewLine + Loc.T("Shrink them to A4? Their content is scaled down without losing quality.");
+        return Dialogs.Choose(Loc.T("Merge"), message, Loc.T("Leave as is"), Loc.T("Fit to A4"));
     }
 
     private static void SplitPdf(string file)

@@ -323,6 +323,81 @@ await Check("pdf assemble rotate/reorder", () =>
     PdfEngine.Assemble([new PdfPageRef(P("pages.pdf"), 2, 90), new PdfPageRef(P("pages.pdf"), 0, 0)], o);
     return One(o);
 });
+await Check("pdf pagine fuori misura portate ad A4", async () =>
+{
+    // A scan saved at 72 dpi: the page is as big as the image in pixels (here 1440 × 2036 pt, about 508 × 718 mm),
+    // the same page turned sideways by /Rotate, and an A5 receipt, which must stay as it is.
+    var big = P("oversize.pdf");
+    using (var doc = new PdfSharp.Pdf.PdfDocument())
+    {
+        foreach (var rotate in new[] { 0, 90 })
+        {
+            var page = doc.AddPage();
+            page.Width = PdfSharp.Drawing.XUnit.FromPoint(1440);
+            page.Height = PdfSharp.Drawing.XUnit.FromPoint(2036);
+            using (var gfx = PdfSharp.Drawing.XGraphics.FromPdfPage(page))
+                gfx.DrawRectangle(PdfSharp.Drawing.XBrushes.Black, 0, 0, 1440, 1018);
+            page.Rotate = rotate;
+        }
+        var a5 = doc.AddPage();
+        a5.Width = PdfSharp.Drawing.XUnit.FromMillimeter(148);
+        a5.Height = PdfSharp.Drawing.XUnit.FromMillimeter(210);
+        doc.Save(big);
+    }
+    var sizes = PdfEngine.PageSizes(big);
+    if (!sizes[0].IsLargerThanA4 || !sizes[1].IsLargerThanA4 || sizes[2].IsLargerThanA4 || sizes[2].IsA4
+        || $"{sizes[0]}" != "508 × 718 mm" || $"{sizes[1]}" != "718 × 508 mm") throw new Exception("misure: " + string.Join(", ", sizes));
+    if (!PdfEngine.PageSizes(P("pages.pdf")).All(s => s.IsA4)) throw new Exception("A4 non riconosciuto");
+
+    var o = P("oversize A4.pdf");
+    PdfEngine.Merge([P("pages.pdf"), big], o, fitA4: true);
+    var after = PdfEngine.PageSizes(o);
+    if (after.Count != 6 || !after.Take(5).All(s => s.IsA4) || $"{after[5]}" != "148 × 210 mm") throw new Exception("dopo: " + string.Join(", ", after));
+    if (after[4].WidthMm < after[4].HeightMm) throw new Exception("la pagina ruotata non è più orizzontale");
+    // Top half black, bottom half white, as in the original.
+    using var render = new MagickImage((await PdfEngine.RenderAsync(o, [3], 210))[0]);
+    using var top = render.CloneArea(0, 0, render.Width, render.Height / 2 - 4);
+    using var bottom = render.CloneArea(0, (int)render.Height / 2 + 4, render.Width, render.Height / 2 - 4);
+    var t = top.Statistics().GetChannel(PixelChannel.Red)!.Mean / Quantum.Max;
+    var b = bottom.Statistics().GetChannel(PixelChannel.Red)!.Mean / Quantum.Max;
+    if (t > 0.1 || b < 0.9) throw new Exception($"contenuto spostato: sopra {t:0.00}, sotto {b:0.00}");
+    using var turned = new MagickImage((await PdfEngine.RenderAsync(o, [4], 297))[0]);
+    // Turned 90° clockwise: the black half is now on the right.
+    using var left = turned.CloneArea(0, 0, turned.Width / 2 - 4, turned.Height);
+    using var right = turned.CloneArea((int)turned.Width / 2 + 4, 0, turned.Width / 2 - 4, turned.Height);
+    var l = left.Statistics().GetChannel(PixelChannel.Red)!.Mean / Quantum.Max;
+    var r = right.Statistics().GetChannel(PixelChannel.Red)!.Mean / Quantum.Max;
+    if (r > 0.1 || l < 0.9) throw new Exception($"pagina ruotata sbagliata: sinistra {l:0.00}, destra {r:0.00}");
+
+    // Without the option nothing changes; A4 pages are copied as they are.
+    var kept = P("oversize kept.pdf");
+    PdfEngine.Merge([big], kept);
+    if (PdfEngine.PageSizes(kept).Take(2).Any(s => s.IsA4)) throw new Exception("adattata senza richiesta");
+    return [o, kept];
+});
+await Check("pdf dpi delle scansioni", () =>
+{
+    // 1000 × 1414 pixels on a page as big as the pixels in points: 72 dpi, about 121 dpi once on A4.
+    using (var image = new MagickImage(MagickColors.Gray, 1000, 1414)) image.Write(P("scan72.jpg"));
+    var o = P("scan72.pdf");
+    using (var doc = new PdfSharp.Pdf.PdfDocument())
+    {
+        var page = doc.AddPage();
+        page.Width = PdfSharp.Drawing.XUnit.FromPoint(1000);
+        page.Height = PdfSharp.Drawing.XUnit.FromPoint(1414);
+        using (var gfx = PdfSharp.Drawing.XGraphics.FromPdfPage(page))
+        using (var ximage = PdfSharp.Drawing.XImage.FromFile(P("scan72.jpg")))
+            gfx.DrawImage(ximage, 0, 0, 1000, 1414);
+        doc.AddPage();
+        doc.Save(o);
+    }
+    var infos = PdfEngine.PageInfos(o);
+    if (infos[0].Dpi != 72) throw new Exception($"dpi: {infos[0].Dpi}");
+    var onA4 = (int)Math.Round(infos[0].Dpi!.Value / infos[0].Size.A4Scale);
+    if (Math.Abs(onA4 - 121) > 1) throw new Exception($"dpi su A4: {onA4}");
+    if (infos[1].Dpi is not null) throw new Exception("dpi su una pagina senza immagini");
+    return One(o);
+});
 await Check("collage", () =>
 {
     var o = P("Collage.jpg");

@@ -116,6 +116,34 @@ public static class Dialogs
         return confirmed;
     }
 
+    /// <summary>
+    /// A question with two answers. True for <paramref name="yesText"/>, false for <paramref name="noText"/>,
+    /// null when the window is closed (Esc or ×): the user gave up on the whole operation.
+    /// </summary>
+    public static bool? Choose(string title, string message, string noText, string yesText)
+    {
+        var window = Build(title, out var body, out var buttons);
+        body.Children.Add(new TextBlock { Text = message, TextWrapping = TextWrapping.Wrap, MaxWidth = 420 });
+        bool? answer = null;
+        var no = new Button { Content = noText, MinWidth = 80, Margin = new Thickness(0, 0, 8, 0) };
+        var yes = new Button { Content = yesText, IsDefault = true, MinWidth = 80, Style = (Style)Application.Current.FindResource("Primary") };
+        no.Click += (_, _) =>
+        {
+            answer = false;
+            window.Close();
+        };
+        yes.Click += (_, _) =>
+        {
+            answer = true;
+            window.Close();
+        };
+        buttons.Children.Add(no);
+        buttons.Children.Add(yes);
+        window.Topmost = true;
+        window.ShowDialog();
+        return answer;
+    }
+
     private static void AddOkCancel(Window window, Panel buttons, Action onOk, string okText = "OK")
     {
         var cancel = new Button { Content = "Cancel", IsCancel = true, MinWidth = 80, Margin = new Thickness(0, 0, 8, 0) };

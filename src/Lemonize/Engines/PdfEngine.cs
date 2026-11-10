@@ -11,7 +11,41 @@ using WinPdf = Windows.Data.Pdf;
 
 namespace Lemonize.Engines;
 
-public sealed record PdfPageRef(string Source, int Index, int ExtraRotation);
+/// <param name="FitA4">
+/// Shrink the page to fit an A4 sheet (portrait or landscape, as the page is) when it is larger than A4.
+/// Smaller pages (receipts, A5) are left as they are.
+/// </param>
+public sealed record PdfPageRef(string Source, int Index, int ExtraRotation, bool FitA4 = false);
+
+/// <summary>A page's size in millimeters as it is shown, i.e. after its own rotation.</summary>
+public readonly record struct PdfPageSize(double WidthMm, double HeightMm)
+{
+    /// <summary>
+    /// A4 in either orientation, within 5 mm per side: scanners and printers to PDF round the size a little
+    /// (Letter, 216 × 279 mm, is not A4).
+    /// </summary>
+    public bool IsA4 => Near(WidthMm, HeightMm, 210, 297) || Near(WidthMm, HeightMm, 297, 210);
+
+    /// <summary>Wider or taller than an A4 sheet laid out the same way (landscape pages against landscape A4).</summary>
+    public bool IsLargerThanA4 => WidthMm > HeightMm
+        ? WidthMm > 297 + 5 || HeightMm > 210 + 5
+        : WidthMm > 210 + 5 || HeightMm > 297 + 5;
+
+    /// <summary>How much the page shrinks once brought to A4 (1 when it already fits).</summary>
+    public double A4Scale => Math.Min(1, WidthMm > HeightMm
+        ? Math.Min(297 / WidthMm, 210 / HeightMm)
+        : Math.Min(210 / WidthMm, 297 / HeightMm));
+
+    private static bool Near(double w, double h, double a, double b) => Math.Abs(w - a) <= 5 && Math.Abs(h - b) <= 5;
+
+    public override string ToString() => $"{WidthMm:0} × {HeightMm:0} mm";
+}
+
+/// <param name="Dpi">
+/// Resolution of the scan on the page as it is now: pixels of its largest image per inch of paper. Null when
+/// no image covers at least half the page (text and drawings have no resolution).
+/// </param>
+public sealed record PdfPageInfo(PdfPageSize Size, int? Dpi);
 
 public static class PdfEngine
 {
@@ -152,13 +186,14 @@ public static class PdfEngine
         document.Save(output);
     }
 
-    public static void Merge(IReadOnlyList<string> inputs, string output)
+    /// <param name="fitA4">Shrink every page larger than A4 to A4 (see <see cref="PdfPageRef.FitA4"/>).</param>
+    public static void Merge(IReadOnlyList<string> inputs, string output, bool fitA4 = false)
     {
         var pages = new List<PdfPageRef>();
         foreach (var input in inputs)
         {
             using var doc = PdfReader.Open(input, PdfDocumentOpenMode.Import);
-            pages.AddRange(Enumerable.Range(0, doc.PageCount).Select(i => new PdfPageRef(input, i, 0)));
+            pages.AddRange(Enumerable.Range(0, doc.PageCount).Select(i => new PdfPageRef(input, i, 0, fitA4)));
         }
         Assemble(pages, output);
     }
@@ -175,6 +210,7 @@ public static class PdfEngine
                 if (!sources.TryGetValue(pageRef.Source, out var source))
                     sources[pageRef.Source] = source = PdfReader.Open(pageRef.Source, PdfDocumentOpenMode.Import);
                 var page = result.AddPage(source.Pages[pageRef.Index]);
+                if (pageRef.FitA4 && SizeOf(page).IsLargerThanA4) ShrinkToA4(page);
                 if (pageRef.ExtraRotation != 0)
                     page.Rotate = ((page.Rotate + pageRef.ExtraRotation) % 360 + 360) % 360;
             }
@@ -186,6 +222,88 @@ public static class PdfEngine
         {
             foreach (var doc in sources.Values) doc.Dispose();
         }
+    }
+
+    private static PdfPageSize SizeOf(PdfPage page)
+    {
+        var w = XUnit.FromPoint(page.MediaBox.Width).Millimeter;
+        var h = XUnit.FromPoint(page.MediaBox.Height).Millimeter;
+        return page.Rotate % 180 == 0 ? new PdfPageSize(w, h) : new PdfPageSize(h, w);
+    }
+
+    /// <summary>
+    /// Turns the page into an A4 sheet with its content scaled down to fit, centered, never distorted. The
+    /// content itself is untouched (text stays text, images keep their pixels), so the file doesn't grow and
+    /// nothing blurs; links and notes are moved along. The work is done on the page as stored, before its own
+    /// rotation, so a page shown sideways becomes a landscape A4 shown the same way.
+    /// </summary>
+    private static void ShrinkToA4(PdfPage page)
+    {
+        var box = page.MediaBox;
+        var landscape = box.Width > box.Height;
+        var sheetWidth = XUnit.FromMillimeter(landscape ? 297 : 210).Point;
+        var sheetHeight = XUnit.FromMillimeter(landscape ? 210 : 297).Point;
+        var scale = Math.Min(sheetWidth / box.Width, sheetHeight / box.Height);
+        var dx = (sheetWidth - box.Width * scale) / 2 - box.X1 * scale;
+        var dy = (sheetHeight - box.Height * scale) / 2 - box.Y1 * scale;
+
+        var inv = System.Globalization.CultureInfo.InvariantCulture;
+        var before = page.Contents.PrependContent();
+        before.CreateStream(System.Text.Encoding.ASCII.GetBytes(string.Format(inv, "q {0:0.######} 0 0 {0:0.######} {1:0.###} {2:0.###} cm\n", scale, dx, dy)));
+        var after = page.Contents.AppendContent();
+        after.CreateStream(System.Text.Encoding.ASCII.GetBytes("\nQ\n"));
+
+        if (page.Elements.GetArray("/Annots") is { } annots)
+            foreach (var item in annots.Elements)
+                if ((item as PdfDictionary ?? (item as PdfReference)?.Value) is PdfDictionary annot && annot.Elements.GetRectangle("/Rect") is { IsZero: false } rect)
+                    annot.Elements.SetRectangle("/Rect", new PdfRectangle(
+                        new XPoint(rect.X1 * scale + dx, rect.Y1 * scale + dy), new XPoint(rect.X2 * scale + dx, rect.Y2 * scale + dy)));
+
+        foreach (var key in new[] { "/CropBox", "/BleedBox", "/TrimBox", "/ArtBox" }) page.Elements.Remove(key);
+        page.MediaBox = new PdfRectangle(new XPoint(0, 0), new XPoint(sheetWidth, sheetHeight));
+    }
+
+    /// <summary>The size of every page of the PDF, in order.</summary>
+    public static List<PdfPageSize> PageSizes(string path)
+    {
+        using var doc = PdfReader.Open(path, PdfDocumentOpenMode.Import);
+        return doc.Pages.Cast<PdfPage>().Select(SizeOf).ToList();
+    }
+
+    /// <summary>Size and scan resolution of every page. The resolution is only a hint: if it can't be read it's left out.</summary>
+    public static List<PdfPageInfo> PageInfos(string path)
+    {
+        var sizes = PageSizes(path);
+        var dpis = new int?[sizes.Count];
+        try
+        {
+            using var doc = UglyToad.PdfPig.PdfDocument.Open(path);
+            for (var i = 0; i < Math.Min(doc.NumberOfPages, dpis.Length); i++)
+            {
+                try
+                {
+                    dpis[i] = ScanDpi(doc.GetPage(i + 1));
+                }
+                catch
+                {
+                    // An image PdfPig can't read: no resolution for this page.
+                }
+            }
+        }
+        catch
+        {
+            // PdfPig can't open it (e.g. encrypted): sizes only.
+        }
+        return sizes.Select((size, i) => new PdfPageInfo(size, dpis[i])).ToList();
+    }
+
+    private static int? ScanDpi(UglyToad.PdfPig.Content.Page page)
+    {
+        // Areas, not widths: they don't change when the image is drawn turned on the page.
+        var largest = page.GetImages().Select(image => (Image: image, Area: Math.Abs(image.Bounds.Width * image.Bounds.Height))).MaxBy(x => x.Area);
+        if (largest.Image is null || largest.Area < page.Width * page.Height / 2) return null;
+        var pixels = (double)largest.Image.WidthInSamples * largest.Image.HeightInSamples;
+        return (int)Math.Round(Math.Sqrt(pixels / (largest.Area / (72.0 * 72.0))));
     }
 
     public static int PageCount(string path)

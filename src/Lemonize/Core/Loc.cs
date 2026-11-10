@@ -330,6 +330,18 @@ public static class Loc
         ["{0} pages · drag to reorder, Delete to remove"] = "{0} pagine · trascina per riordinare, Canc per eliminare",
         ["Select the pages to extract first (Ctrl+click or Shift+click for several)."] = "Prima seleziona le pagine da estrarre (Ctrl+clic o Shift+clic per più pagine).",
         ["There are no pages left."] = "Non sono rimaste pagine.",
+        ["Fit to A4"] = "Porta ad A4",
+        ["→ A4 · {0} dpi"] = "→ A4 · {0} dpi",
+        ["{0} dpi → {1} on A4"] = "{0} dpi → {1} su A4",
+        ["{0} · {1} dpi"] = "{0} · {1} dpi",
+        ["1 page larger than A4"] = "1 pagina più grande dell'A4",
+        ["{0} pages larger than A4"] = "{0} pagine più grandi dell'A4",
+        ["None of the selected pages is larger than A4."] = "Nessuna delle pagine selezionate è più grande dell'A4.",
+        ["No page is larger than A4."] = "Nessuna pagina è più grande dell'A4.",
+        ["1 page of {0} is larger than A4 ({1})."] = "1 pagina su {0} è più grande dell'A4 ({1}).",
+        ["{0} pages of {1} are larger than A4 (the largest is {2})."] = "{0} pagine su {1} sono più grandi dell'A4 (la più grande è {2}).",
+        ["Shrink them to A4? Their content is scaled down without losing quality."] = "Vuoi portarle ad A4? Il contenuto viene rimpicciolito senza perdere qualità.",
+        ["Leave as is"] = "Lascia così",
 
         // ---------- Image editor ----------
         ["Edit · {0}"] = "Modifica · {0}",

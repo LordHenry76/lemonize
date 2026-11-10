@@ -20,6 +20,8 @@ public sealed class PdfPageItem : INotifyPropertyChanged
 {
     private int _rotation;
     private BitmapSource? _thumb;
+    private PdfPageInfo? _info;
+    private bool _fitA4;
 
     public PdfPageItem(string source, int index, string label)
     {
@@ -40,6 +42,53 @@ public sealed class PdfPageItem : INotifyPropertyChanged
             _rotation = (value % 360 + 360) % 360;
             PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(Rotation)));
         }
+    }
+
+    /// <summary>Size and resolution, read after the page appears; null until then or if unreadable.</summary>
+    public PdfPageInfo? Info
+    {
+        get => _info;
+        set
+        {
+            _info = value;
+            Changed(nameof(Info), nameof(Details), nameof(Oversize));
+        }
+    }
+
+    /// <summary>The page will be shrunk to A4 when saved (only pages larger than A4 can be).</summary>
+    public bool FitA4
+    {
+        get => _fitA4;
+        set
+        {
+            _fitA4 = value && Info?.Size.IsLargerThanA4 == true;
+            Changed(nameof(FitA4), nameof(Details), nameof(Oversize));
+        }
+    }
+
+    /// <summary>Larger than A4 and not yet set to be shrunk: shown highlighted.</summary>
+    public bool Oversize => Info?.Size.IsLargerThanA4 == true && !FitA4;
+
+    /// <summary>"210 × 297 mm · 300 dpi", or the A4 it will become.</summary>
+    public string Details
+    {
+        get
+        {
+            if (Info is not { } info) return "";
+            var size = info.Size;
+            var onA4 = info.Dpi is { } dpi ? (int?)Math.Round(dpi / size.A4Scale) : null;
+            if (FitA4) return onA4 is { } d ? Loc.F("→ A4 · {0} dpi", d) : "→ A4";
+            if (info.Dpi is not { } current) return size.ToString();
+            // Too long for one line under a thumbnail: the resolution goes on its own line.
+            return size.IsLargerThanA4
+                ? size + Environment.NewLine + Loc.F("{0} dpi → {1} on A4", current, onA4!)
+                : Loc.F("{0} · {1} dpi", size, current);
+        }
+    }
+
+    private void Changed(params string[] names)
+    {
+        foreach (var name in names) PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(name));
     }
 
     public BitmapSource? Thumb
@@ -91,6 +140,8 @@ public sealed class PdfOrganizerWindow : ThemedWindow
         toolbar.Children.Add(Tool("", "Delete", Delete));
         toolbar.Children.Add(Tool("", "Move earlier", () => Move(-1)));
         toolbar.Children.Add(Tool("", "Move later", () => Move(1)));
+        // Scans are always A4: the review step has nothing to shrink.
+        if (onSave is null) toolbar.Children.Add(Tool("", "Fit to A4", FitToA4));
         if (onSave is null) toolbar.Children.Add(Tool("", "Extract selected", Extract));
 
         var footer = new DockPanel { Margin = new Thickness(16, 8, 16, 16) };
@@ -103,7 +154,7 @@ public sealed class PdfOrganizerWindow : ThemedWindow
 
         _list.ItemsSource = _pages;
         _list.ItemsPanel = new ItemsPanelTemplate(new FrameworkElementFactory(typeof(WrapPanel)));
-        _list.ItemTemplate = BuildTemplate();
+        _list.ItemTemplate = BuildTemplate((Brush)FindResource("TextDim"), (Brush)FindResource("Accent"));
         _list.Margin = new Thickness(12, 0, 12, 0);
         _list.KeyDown += (_, e) =>
         {
@@ -145,7 +196,7 @@ public sealed class PdfOrganizerWindow : ThemedWindow
         return button;
     }
 
-    private static DataTemplate BuildTemplate()
+    private static DataTemplate BuildTemplate(Brush dim, Brush highlight)
     {
         var stack = new FrameworkElementFactory(typeof(StackPanel));
         stack.SetValue(FrameworkElement.WidthProperty, 150.0);
@@ -171,7 +222,24 @@ public sealed class PdfOrganizerWindow : ThemedWindow
         label.SetValue(TextBlock.TextTrimmingProperty, TextTrimming.CharacterEllipsis);
         label.SetValue(FrameworkElement.MarginProperty, new Thickness(0, 6, 0, 0));
         stack.AppendChild(label);
-        return new DataTemplate { VisualTree = stack };
+
+        // The thumbnails all look the same size: this line is what tells an oversized page apart.
+        var details = new FrameworkElementFactory(typeof(TextBlock)) { Name = "details" };
+        details.SetBinding(TextBlock.TextProperty, new Binding(nameof(PdfPageItem.Details)));
+        details.SetValue(TextBlock.HorizontalAlignmentProperty, HorizontalAlignment.Center);
+        details.SetValue(TextBlock.FontSizeProperty, 10.5);
+        details.SetValue(TextBlock.ForegroundProperty, dim);
+        details.SetValue(TextBlock.TextWrappingProperty, TextWrapping.Wrap);
+        details.SetValue(TextBlock.TextAlignmentProperty, TextAlignment.Center);
+        details.SetValue(FrameworkElement.MarginProperty, new Thickness(0, 2, 0, 0));
+        stack.AppendChild(details);
+
+        var template = new DataTemplate { VisualTree = stack };
+        var oversize = new DataTrigger { Binding = new Binding(nameof(PdfPageItem.Oversize)), Value = true };
+        oversize.Setters.Add(new Setter(TextBlock.ForegroundProperty, highlight, "details"));
+        oversize.Setters.Add(new Setter(TextBlock.FontWeightProperty, FontWeights.SemiBold, "details"));
+        template.Triggers.Add(oversize);
+        return template;
     }
 
     private sealed class RotationConverter : IValueConverter
@@ -191,7 +259,18 @@ public sealed class PdfOrganizerWindow : ThemedWindow
                 var prefix = _files.Count > 1 ? OutputPaths.BaseName(file) + " · " : "";
                 var items = Enumerable.Range(0, count).Select(i => new PdfPageItem(file, i, _pageNames is { } names && i < names.Count ? names[i] : $"{prefix}p. {i + 1}")).ToList();
                 foreach (var item in items) _pages.Add(item);
+                // Read alongside the thumbnails: finding the resolution can take a moment on long scans.
+                var infos = Task.Run(() => PdfEngine.PageInfos(file));
                 await PdfEngine.RenderEachAsync(file, null, 280, (i, png) => items[i].Thumb = ImageEngine.BitmapFromBytes(png));
+                try
+                {
+                    var read = await infos;
+                    for (var i = 0; i < Math.Min(read.Count, items.Count); i++) items[i].Info = read[i];
+                }
+                catch
+                {
+                    // Sizes are a help, not needed to organize the pages.
+                }
             }
             UpdateStatus();
         }
@@ -201,7 +280,33 @@ public sealed class PdfOrganizerWindow : ThemedWindow
         }
     }
 
-    private void UpdateStatus() => _status.Text = Loc.F("{0} pages · drag to reorder, Delete to remove", _pages.Count);
+    private void UpdateStatus()
+    {
+        var text = Loc.F("{0} pages · drag to reorder, Delete to remove", _pages.Count);
+        var oversize = _pages.Count(p => p.Oversize);
+        if (oversize > 0) text += " · " + (oversize == 1 ? Loc.T("1 page larger than A4") : Loc.F("{0} pages larger than A4", oversize));
+        _status.Text = text;
+    }
+
+    /// <summary>
+    /// Shrinks the selected pages larger than A4, or all of them when none is selected. Pressed again on pages
+    /// already set, it leaves them as they were.
+    /// </summary>
+    private void FitToA4()
+    {
+        var selected = Selected();
+        var targets = (selected.Count > 0 ? selected : _pages.ToList()).Where(p => p.Info?.Size.IsLargerThanA4 == true).ToList();
+        if (targets.Count == 0)
+        {
+            Dialogs.Message(Loc.T("Fit to A4"), selected.Count > 0
+                ? Loc.T("None of the selected pages is larger than A4.")
+                : Loc.T("No page is larger than A4."));
+            return;
+        }
+        var fit = !targets.All(p => p.FitA4);
+        foreach (var page in targets) page.FitA4 = fit;
+        UpdateStatus();
+    }
 
     private List<PdfPageItem> Selected() => _list.SelectedItems.Cast<PdfPageItem>().OrderBy(_pages.IndexOf).ToList();
 
@@ -404,7 +509,7 @@ public sealed class PdfOrganizerWindow : ThemedWindow
     }
 
     private IReadOnlyList<PdfPageRef> Refs(IEnumerable<PdfPageItem> pages) =>
-        pages.Select(p => new PdfPageRef(p.Source, p.Index, p.Rotation)).ToList();
+        pages.Select(p => new PdfPageRef(p.Source, p.Index, p.Rotation, p.FitA4)).ToList();
 
     private void Extract()
     {
