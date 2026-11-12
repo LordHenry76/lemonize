@@ -1,5 +1,6 @@
 using System.IO;
 using System.Text.Json;
+using Lemonize.Engines;
 
 namespace Lemonize.Core;
 
@@ -41,6 +42,7 @@ public sealed class Settings
     public bool FirstRunDone { get; set; }
     public bool CheckForUpdates { get; set; } = true;
     public string? SkippedUpdateVersion { get; set; }
+    public ScanQuality ScanQuality { get; set; } = ScanQuality.Normal;
 
     /// <summary>"auto" (follow Windows), "en" or "it".</summary>
     public string Language { get; set; } = "auto";

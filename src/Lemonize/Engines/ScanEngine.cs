@@ -9,6 +9,10 @@ namespace Lemonize.Engines;
 
 public enum ScanLook { BlackAndWhite, Color, Original }
 
+/// <summary>How finely scanned pages are stored: High is 300 dpi, Normal 200 dpi (sharp text, about a third of
+/// the weight), Light 150 dpi for e-mail attachments.</summary>
+public enum ScanQuality { High, Normal, Light }
+
 /// <summary>
 /// One photo to scan. Corners are top-left, top-right, bottom-right, bottom-left in the photo's pixels after
 /// rotation; null means detect them (or take the whole photo). AutoTone first fixes dark photos and color casts.
@@ -302,25 +306,49 @@ public static class ScanEngine
         return photo;
     }
 
-    /// <summary>Writes every page as a full-bleed A4 page at 300 dpi.</summary>
-    public static void ToPdf(IReadOnlyList<ScanPage> pages, string output, Action<double>? progress = null)
+    private static (double Dpi, int Jpeg) Grade(ScanQuality quality) => quality switch
+    {
+        ScanQuality.High => (300, 85),
+        ScanQuality.Light => (150, 70),
+        _ => (200, 80),
+    };
+
+    /// <summary>The A4 long side in pixels at the quality's resolution.</summary>
+    public static int LongSide(ScanQuality quality) => (int)Math.Round(297 / 25.4 * Grade(quality).Dpi);
+
+    /// <summary>
+    /// Straightens and cleans <paramref name="photo"/> (already in the user's orientation) into the JPEG of an A4
+    /// page at <paramref name="quality"/>. A smaller <paramref name="longSide"/> renders a reduced copy, for estimates.
+    /// </summary>
+    public static byte[] RenderPage(MagickImage photo, IReadOnlyList<Point> corners, ScanLook look, double whitening, bool autoTone,
+        ScanQuality quality, int longSide = 0)
+    {
+        using var image = Straighten(photo, corners, longSide > 0 ? longSide : LongSide(quality));
+        if (autoTone) AutoTone(image);
+        Clean(image, look, whitening);
+        image.Format = MagickFormat.Jpeg;
+        image.Quality = (uint)Grade(quality).Jpeg;
+        if (look == ScanLook.BlackAndWhite) image.ColorType = ColorType.Grayscale;
+        return image.ToByteArray();
+    }
+
+    /// <summary>Writes every page as a full-bleed A4 page at the chosen quality.</summary>
+    public static void ToPdf(IReadOnlyList<ScanPage> pages, string output, Action<double>? progress = null, ScanQuality quality = ScanQuality.High)
     {
         using var document = new PdfDocument();
         for (var i = 0; i < pages.Count; i++)
         {
             var scan = pages[i];
-            using var photo = LoadPhoto(scan.File, scan.Rotation);
-            var corners = scan.Corners ?? DetectSheet(photo) ?? DefaultCorners(photo.Width, photo.Height);
-            using var image = Straighten(photo, corners);
-            if (scan.AutoTone) AutoTone(image);
-            Clean(image, scan.Look, scan.Whitening);
-            image.Format = MagickFormat.Jpeg;
-            image.Quality = 85;
-            if (scan.Look == ScanLook.BlackAndWhite) image.ColorType = ColorType.Grayscale;
-            using var stream = new MemoryStream(image.ToByteArray());
+            byte[] jpeg;
+            using (var photo = LoadPhoto(scan.File, scan.Rotation))
+            {
+                var corners = scan.Corners ?? DetectSheet(photo) ?? DefaultCorners(photo.Width, photo.Height);
+                jpeg = RenderPage(photo, corners, scan.Look, scan.Whitening, scan.AutoTone, quality);
+            }
+            using var stream = new MemoryStream(jpeg);
             using var ximage = XImage.FromStream(stream);
 
-            var landscape = image.Width > image.Height;
+            var landscape = ximage.PixelWidth > ximage.PixelHeight;
             var page = document.AddPage();
             page.Width = XUnit.FromMillimeter(landscape ? 297 : 210);
             page.Height = XUnit.FromMillimeter(landscape ? 210 : 297);

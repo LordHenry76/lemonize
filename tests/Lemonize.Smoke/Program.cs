@@ -533,6 +533,29 @@ await Check("scansiona documento: foglio storto trovato, raddrizzato su A4", asy
     Console.WriteLine($"      {OutputPaths.FormatSize(new FileInfo(o).Length)}, luminosità {mean:0.00}");
     return [o];
 });
+await Check("scansione a qualità Alta/Normale/Leggera: A4 a 300/200/150 dpi, peso decrescente", () =>
+{
+    var sizes = new List<long>();
+    var outputs = new List<string>();
+    foreach (var (quality, width) in new[] { (ScanQuality.High, 2480), (ScanQuality.Normal, 1654), (ScanQuality.Light, 1240) })
+    {
+        var o = P($"scan-{quality}.pdf");
+        ScanEngine.ToPdf([new ScanPage(P("sheet-photo.jpg"), 0, null, ScanLook.Color, 0.5)], o, quality: quality);
+        using (var doc = PdfSharp.Pdf.IO.PdfReader.Open(o, PdfSharp.Pdf.IO.PdfDocumentOpenMode.Import))
+        {
+            var page = doc.Pages[0];
+            if ($"{page.Width.Millimeter:0}×{page.Height.Millimeter:0}" != "210×297") throw new Exception($"{quality}: pagina non A4");
+        }
+        using (var photo = ScanEngine.LoadPhoto(P("sheet-photo.jpg"), 0))
+        using (var jpeg = new MagickImage(ScanEngine.RenderPage(photo, ScanEngine.DetectSheet(photo)!, ScanLook.Color, 0.5, false, quality)))
+            if (Math.Abs((int)jpeg.Width - width) > 2) throw new Exception($"{quality}: larghezza {jpeg.Width} invece di {width}");
+        sizes.Add(new FileInfo(o).Length);
+        outputs.Add(o);
+    }
+    if (!(sizes[0] > sizes[1] && sizes[1] > sizes[2])) throw new Exception("pesi " + string.Join(" / ", sizes.Select(OutputPaths.FormatSize)));
+    Console.WriteLine("      " + string.Join(" / ", sizes.Select(OutputPaths.FormatSize)));
+    return Task.FromResult<IEnumerable<string>>(outputs);
+});
 await Check("scansione riordinata prima di salvare: ordine nuovo, immagini non ricompresse", () =>
 {
     // What the scan's review does: the two pages of scan-a4.pdf (portrait, landscape) swapped, then one deleted.

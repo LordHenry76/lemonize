@@ -41,6 +41,9 @@ public sealed class ScanWindow : ThemedWindow
         public BitmapSource? Bitmap { get; set; }
         /// <summary>Photo pixels per display pixel.</summary>
         public double Scale { get; set; } = 1;
+        /// <summary>The page's JPEG size at full resolution, for the settings described by <see cref="EstimateKey"/>.</summary>
+        public long EstimateBytes { get; set; }
+        public string? EstimateKey { get; set; }
     }
 
     private enum Grip { None, Corner, Side }
@@ -67,6 +70,10 @@ public sealed class ScanWindow : ThemedWindow
     private readonly CheckBox _autoTone = new() { Content = "Auto tone" };
     private readonly ComboBox _look = new();
     private readonly Slider _whitening = new() { Minimum = 0, Maximum = 100, Value = 50 };
+    private readonly ComboBox _quality = new();
+    private readonly TextBlock _estimate = new() { HorizontalAlignment = HorizontalAlignment.Right, ToolTip = "Estimated size of the PDF" };
+    private readonly DispatcherTimer _estimateTimer = new() { Interval = TimeSpan.FromMilliseconds(500) };
+    private bool _estimating;
     private readonly Image _result = new() { Stretch = Stretch.Uniform };
     private readonly Button _save = new() { Content = "Save PDF", MinWidth = 110 };
     private readonly DispatcherTimer _previewTimer = new() { Interval = TimeSpan.FromMilliseconds(150) };
@@ -97,6 +104,11 @@ public sealed class ScanWindow : ThemedWindow
         {
             _previewTimer.Stop();
             UpdateResult();
+        };
+        _estimateTimer.Tick += async (_, _) =>
+        {
+            _estimateTimer.Stop();
+            await Estimate();
         };
         Content = BuildLayout();
         Loaded += async (_, _) => await ShowPage(0);
@@ -204,8 +216,24 @@ public sealed class ScanWindow : ThemedWindow
         var whiteningRow = Row((whiteningLabel, LabelWidth), (_whitening, Fill));
         whiteningRow.Margin = new Thickness(0, 8, 0, 0);
         look.Children.Add(whiteningRow);
+        _quality.ItemsSource = new[] { Loc.T("High"), Loc.T("Normal"), Loc.T("Light") };
+        _quality.SelectedIndex = (int)Settings.Current.ScanQuality;
+        _quality.ToolTip = "High: 300 dpi, as detailed as it gets · Normal: 200 dpi, sharp text at about a third of the size · Light: 150 dpi, for e-mail";
+        _quality.SelectionChanged += (_, _) =>
+        {
+            Settings.Current.ScanQuality = Quality;
+            Settings.Current.Save();
+            ScheduleEstimate();
+        };
+        var qualityRow = Row((new TextBlock { Text = "Quality", Style = (Style)FindResource("Dim"), VerticalAlignment = VerticalAlignment.Center }, LabelWidth), (_quality, Fill));
+        qualityRow.Margin = new Thickness(0, 8, 0, 0);
+        look.Children.Add(qualityRow);
 
-        var resultLabel = new TextBlock { Text = "Result", Style = (Style)FindResource("Dim"), Margin = new Thickness(0, 14, 0, 6) };
+        var resultLabel = new DockPanel { Margin = new Thickness(0, 14, 0, 6) };
+        _estimate.Style = (Style)FindResource("Dim");
+        DockPanel.SetDock(_estimate, Dock.Right);
+        resultLabel.Children.Add(_estimate);
+        resultLabel.Children.Add(new TextBlock { Text = "Result", Style = (Style)FindResource("Dim") });
         var resultBox = new Border
         {
             Background = new SolidColorBrush(Color.FromRgb(0x10, 0x10, 0x12)), CornerRadius = new CornerRadius(8), Padding = new Thickness(8),
@@ -298,6 +326,8 @@ public sealed class ScanWindow : ThemedWindow
     }
 
     private ScanLook Look => (ScanLook)Math.Max(0, _look.SelectedIndex);
+
+    private ScanQuality Quality => (ScanQuality)Math.Max(0, _quality.SelectedIndex);
 
     // ---------- Pages ----------
 
@@ -602,6 +632,7 @@ public sealed class ScanWindow : ThemedWindow
     private void UpdateResult()
     {
         if (Current.Display is not { } display || Current.Corners is not { } corners) return;
+        ScheduleEstimate();
         var version = ++_previewVersion;
         var quad = corners.ToArray();
         var look = Look;
@@ -625,6 +656,65 @@ public sealed class ScanWindow : ThemedWindow
         }, TaskScheduler.FromCurrentSynchronizationContext());
     }
 
+    // ---------- Size estimate ----------
+
+    /// <summary>Everything the page's size depends on; an estimate is still good while this stays the same.</summary>
+    private string? KeyFor(Page page) => page.Corners is { } c
+        ? $"{page.Rotation}|{string.Join(";", c.Select(p => $"{p.X:0.#},{p.Y:0.#}"))}|{Look}|{_whitening.Value:0}|{page.AutoTone}|{Quality}"
+        : null;
+
+    private void ScheduleEstimate()
+    {
+        if (_cards) return;
+        UpdateEstimateLabel();
+        _estimateTimer.Stop();
+        _estimateTimer.Start();
+    }
+
+    /// <summary>
+    /// Renders the current page from the full photo, exactly as saving would, and keeps its size. One at a time:
+    /// whatever changes meanwhile is picked up by the check at the end.
+    /// </summary>
+    private async Task Estimate()
+    {
+        if (_estimating || _closed) return;
+        var page = Current;
+        var key = KeyFor(page);
+        if (key is null || key == page.EstimateKey) return;
+        var corners = page.Corners!.Select(c => new Point(c.X * page.Scale, c.Y * page.Scale)).ToArray();
+        var (look, whitening, autoTone, quality, rotation) = (Look, _whitening.Value / 100, page.AutoTone, Quality, page.Rotation);
+        _estimating = true;
+        try
+        {
+            var bytes = await Task.Run(() =>
+            {
+                using var photo = ScanEngine.LoadPhoto(page.File, rotation);
+                return ScanEngine.RenderPage(photo, corners, look, whitening, autoTone, quality).LongLength;
+            });
+            page.EstimateBytes = bytes;
+            page.EstimateKey = key;
+        }
+        catch (Exception ex) when (ex is MagickException or IOException or UnauthorizedAccessException)
+        {
+            // Only an estimate: the label keeps waiting and saving will report the real problem.
+            return;
+        }
+        finally
+        {
+            _estimating = false;
+        }
+        if (_closed) return;
+        UpdateEstimateLabel();
+        await Estimate();
+    }
+
+    /// <summary>The average of the pages estimated with the current settings, times the number of pages.</summary>
+    private void UpdateEstimateLabel()
+    {
+        var fresh = _pages.Where(p => p.EstimateKey is not null && p.EstimateKey == KeyFor(p)).Select(p => p.EstimateBytes).ToList();
+        _estimate.Text = fresh.Count == 0 ? "PDF ≈ …" : $"PDF ≈ {OutputPaths.FormatSize((long)(fresh.Average() * _pages.Count))}";
+    }
+
     private List<ScanPage> ScanPages()
     {
         var look = Look;
@@ -642,6 +732,7 @@ public sealed class ScanWindow : ThemedWindow
             return;
         }
         var pages = ScanPages();
+        var quality = Quality;
         var files = pages.Select(p => p.File).ToList();
         var output = Dialogs.AskPdfOutput(OutputPaths.DirectoryFor(files[0]), files.Count == 1 || _cards ? OutputPaths.BaseName(files[0]) : Loc.T("Scan"));
         if (output is null) return;
@@ -658,7 +749,7 @@ public sealed class ScanWindow : ThemedWindow
         }
         JobQueue.Enqueue(Loc.T("Scan 1 photo → PDF"), files[0], (job, _) =>
         {
-            ScanEngine.ToPdf(pages, output, job.Report);
+            ScanEngine.ToPdf(pages, output, job.Report, quality);
             job.Outputs.Add(output);
             return Task.CompletedTask;
         });
@@ -676,11 +767,12 @@ public sealed class ScanWindow : ThemedWindow
         var content = (UIElement)Content;
         content.IsEnabled = false;
         var scans = ScanPages();
+        var quality = Quality;
         var temp = AppPaths.NewTempFile("pdf");
         ShowPreparing(0);
         try
         {
-            await Task.Run(() => ScanEngine.ToPdf(scans, temp, value => Dispatcher.BeginInvoke(() => ShowPreparing(value))));
+            await Task.Run(() => ScanEngine.ToPdf(scans, temp, value => Dispatcher.BeginInvoke(() => ShowPreparing(value)), quality));
         }
         catch (Exception ex)
         {
