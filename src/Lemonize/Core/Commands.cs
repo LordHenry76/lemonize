@@ -64,7 +64,7 @@ public static class Commands
                 if (single) items.Add(new("Edit", "crop · adjust · annotate", Glyphs.Edit, () => new ImageEditorWindow(files[0]).Show()));
                 items.Add(new("Images to PDF", null, Glyphs.Pdf, () => ImagesToPdf(files)));
                 items.Add(new("Scan sheet", "sheet · A4 PDF", Glyphs.Scan, () => new ScanWindow(files).Show()));
-                if (files.Count <= 2) items.Add(new("ID card", "front · back", Glyphs.IdCard, () => new ScanWindow(files, cards: true).Show()));
+                if (files.Count <= ScanEngine.MaxCards) items.Add(new("ID card", files.Count <= 2 ? "front · back" : "2 documents", Glyphs.IdCard, () => new ScanWindow(files, cards: true).Show()));
                 if (!single) items.Add(new("Collage", null, Glyphs.Grid, () => new CollageWindow(files).Show()));
                 items.Add(new("Read QR", null, Glyphs.Qr, () => ReadCodes(files)));
                 break;

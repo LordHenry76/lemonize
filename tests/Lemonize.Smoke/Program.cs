@@ -621,6 +621,32 @@ await Check("documento d'identità: fronte e retro a grandezza reale su A4", asy
     }
     return [o];
 });
+await Check("due documenti d'identità: quattro facce in colonna su A4", async () =>
+{
+    // The photos of the previous check: four sides, front and back of two documents.
+    var o = P("cards4.pdf");
+    var side = (string f) => new ScanPage(P(f), 0, null, ScanLook.Original, 0);
+    ScanEngine.CardsToPdf([side("card-front.jpg"), side("card-back.jpg"), side("card-front.jpg"), side("card-back.jpg")], o);
+    if (PdfEngine.PageCount(o) != 1) throw new Exception("pagine: " + PdfEngine.PageCount(o));
+    using var render = new MagickImage((await PdfEngine.RenderAsync(o, [0], 827))[0]);
+    double Mean(int x, int y, int w, int h)
+    {
+        using var area = (MagickImage)render.Clone();
+        area.Crop(new MagickGeometry(x, y, (uint)w, (uint)h));
+        return area.Statistics().GetChannel(PixelChannel.Blue)!.Mean / Quantum.Max - area.Statistics().GetChannel(PixelChannel.Red)!.Mean / Quantum.Max;
+    }
+    // At 100 dpi a card is 213 px high and the sides stand 39 px (10 mm) apart, the column centered.
+    int cx = (int)render.Width / 2, top = ((int)render.Height - (4 * 213 + 3 * 39)) / 2;
+    for (var i = 0; i < 4; i++)
+    {
+        var y = top + i * (213 + 39);
+        if (Mean(cx - 140, y + 26, 280, 160) < 0.05) throw new Exception($"faccia {i + 1}: nessuna carta al suo posto");
+        if (i < 3 && Mean(cx - 140, y + 213 + 8, 280, 22) > 0.02) throw new Exception($"dopo la faccia {i + 1} non è bianco");
+    }
+    if (Mean(cx - 140, 0, 280, top - 6) > 0.02 || Mean(cx - 140, top + 4 * 213 + 3 * 39 + 6, 280, top - 12) > 0.02)
+        throw new Exception("margini non bianchi");
+    return [o];
+});
 await Check("PDF scansione in grigio salvata come JPEG RGB: compresso non resta bianco", async () =>
 {
     // Like many scanners: gray content stored as a 3-channel JPEG. Re-encoding comes out single-channel.

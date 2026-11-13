@@ -29,12 +29,15 @@ public static class ScanEngine
     private static readonly int A4Short = Px(210);
     private static readonly int A4Long = Px(297);
 
-    // ID-1 cards (identity card, driving licence, health card): 85.6 × 54 mm with 3.18 mm corners,
-    // front above back with 70 mm between them, the pair centered on a portrait A4.
+    // ID-1 cards (identity card, driving licence, health card): 85.6 × 54 mm with 3.18 mm corners, in a column
+    // centered on a portrait A4. One card's front and back stand 70 mm apart; three or four sides (two documents)
+    // only fit closer, 10 mm apart.
+    public const int MaxCards = 4;
     private static readonly int CardWidth = Px(85.6);
     private static readonly int CardHeight = Px(54);
     private static readonly int CardRadius = Px(3.18);
-    private static readonly int CardGap = Px(70);
+    private static readonly int PairGap = Px(70);
+    private static readonly int StackGap = Px(10);
     private const double CardAspect = 85.6 / 54;
 
     private static int Px(double mm) => (int)Math.Round(mm / 25.4 * Dpi);
@@ -398,21 +401,27 @@ public static class ScanEngine
         return card;
     }
 
-    /// <summary>Front (first) and back (second, optional) on one portrait A4 page, in their original colors.</summary>
+    /// <summary>
+    /// Up to <see cref="MaxCards"/> card sides in a column on one portrait A4 page, in their original colors, top to
+    /// bottom in the order given (front and back of the first document, then of the second).
+    /// </summary>
     public static void CardsToPdf(IReadOnlyList<ScanPage> sides, string output, Action<double>? progress = null)
     {
         using var page = new MagickImage(MagickColors.White, (uint)A4Short, (uint)A4Long);
+        var count = Math.Min(MaxCards, sides.Count);
+        var gap = count <= 2 ? PairGap : StackGap;
         var x = (A4Short - CardWidth) / 2;
-        var top = (A4Long - (2 * CardHeight + CardGap)) / 2;
-        for (var i = 0; i < Math.Min(2, sides.Count); i++)
+        // A lone front keeps the place it has in a pair.
+        var top = (A4Long - (Math.Max(2, count) * (CardHeight + gap) - gap)) / 2;
+        for (var i = 0; i < count; i++)
         {
             var side = sides[i];
             using var photo = LoadPhoto(side.File, side.Rotation);
             var corners = side.Corners ?? DetectCard(photo) ?? DefaultCardCorners(photo.Width, photo.Height);
             using var card = StraightenCard(photo, corners);
             if (side.AutoTone) AutoTone(card);
-            page.Composite(card, x, top + i * (CardHeight + CardGap), CompositeOperator.Over);
-            progress?.Invoke((i + 1.0) / (Math.Min(2, sides.Count) + 1));
+            page.Composite(card, x, top + i * (CardHeight + gap), CompositeOperator.Over);
+            progress?.Invoke((i + 1.0) / (count + 1));
         }
         page.Alpha(AlphaAction.Off);
         page.Format = MagickFormat.Jpeg;

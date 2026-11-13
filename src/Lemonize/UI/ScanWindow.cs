@@ -18,8 +18,9 @@ namespace Lemonize.UI;
 
 /// <summary>
 /// Turns photos of paper documents into one A4 PDF: for each photo the sheet's corners are proposed and can be
-/// dragged into place, then every page is straightened and cleaned. In card mode the (up to two) photos are the
-/// front and back of an ID card, laid out together on one A4 page. With several sheets the scanned pages go
+/// dragged into place, then every page is straightened and cleaned. In card mode the (up to four) photos are the
+/// fronts and backs of one or two ID cards, laid out in a column on one A4 page in the order of the strip below
+/// the photo, where they can be dragged around. With several sheets the scanned pages go
 /// through a review (<see cref="PdfOrganizerWindow"/>) before the PDF is saved.
 /// </summary>
 public sealed class ScanWindow : ThemedWindow
@@ -29,6 +30,8 @@ public sealed class ScanWindow : ThemedWindow
     private static readonly Thickness CompactPadding = new(8, 4, 8, 4);
     private static readonly GridLength Fill = new(1, GridUnitType.Star);
     private static readonly GridLength LabelWidth = new(100);
+    private const double SlotWidth = 150;
+    private const double SlotPitch = SlotWidth + 8;
 
     private sealed class Page(string file)
     {
@@ -44,6 +47,10 @@ public sealed class ScanWindow : ThemedWindow
         /// <summary>The page's JPEG size at full resolution, for the settings described by <see cref="EstimateKey"/>.</summary>
         public long EstimateBytes { get; set; }
         public string? EstimateKey { get; set; }
+        /// <summary>The straightened card, for the strip; card mode only.</summary>
+        public BitmapSource? Thumb { get; set; }
+        /// <summary>Loading the photo, started once; false when it can't be opened.</summary>
+        public Task<bool>? Loading { get; set; }
     }
 
     private enum Grip { None, Corner, Side }
@@ -76,6 +83,11 @@ public sealed class ScanWindow : ThemedWindow
     private bool _estimating;
     private readonly Image _result = new() { Stretch = Stretch.Uniform };
     private readonly Button _save = new() { Content = "Save PDF", MinWidth = 110 };
+    private readonly StackPanel _strip = new() { Orientation = Orientation.Horizontal, Background = Brushes.Transparent, HorizontalAlignment = HorizontalAlignment.Left };
+    private readonly StackPanel _stripBox = new() { Margin = new Thickness(0, 10, 0, 0) };
+    private int _dragFrom = -1;
+    private Point _dragStart;
+    private bool _dragging;
     private readonly DispatcherTimer _previewTimer = new() { Interval = TimeSpan.FromMilliseconds(150) };
     private int _previewVersion;
 
@@ -93,7 +105,7 @@ public sealed class ScanWindow : ThemedWindow
     public ScanWindow(IReadOnlyList<string> files, bool cards = false)
     {
         _cards = cards;
-        _pages = [.. files.Order(StringComparer.CurrentCultureIgnoreCase).Take(cards ? 2 : int.MaxValue).Select(f => new Page(f))];
+        _pages = [.. files.Order(StringComparer.CurrentCultureIgnoreCase).Take(cards ? ScanEngine.MaxCards : int.MaxValue).Select(f => new Page(f))];
         UpdateTitle();
         Width = 1180;
         Height = Math.Min(820, SystemParameters.WorkArea.Height);
@@ -111,7 +123,14 @@ public sealed class ScanWindow : ThemedWindow
             await Estimate();
         };
         Content = BuildLayout();
-        Loaded += async (_, _) => await ShowPage(0);
+        Loaded += async (_, _) =>
+        {
+            await ShowPage(0);
+            // The strip shows every side, so the other photos are opened right away.
+            if (_cards)
+                foreach (var page in _pages.ToList())
+                    await Load(page);
+        };
         Closed += (_, _) =>
         {
             _closed = true;
@@ -127,7 +146,7 @@ public sealed class ScanWindow : ThemedWindow
 
     private void UpdateSaveLabel() => _save.Content = Loc.T(NeedsReview ? "Order pages…" : "Save PDF");
 
-    private void UpdateTitle() => Title = _cards ? Loc.T("Scan ID card")
+    private void UpdateTitle() => Title = _cards ? Loc.T(_pages.Count > 2 ? "Scan ID cards" : "Scan ID card")
         : _pages.Count == 1 ? Loc.F("Scan document · {0}", Path.GetFileName(_pages[0].File)) : Loc.F("Scan document · {0} photos", _pages.Count);
 
     // ---------- Layout ----------
@@ -174,8 +193,11 @@ public sealed class ScanWindow : ThemedWindow
             _swap.Margin = new Thickness(0, 6, 0, 0);
             _swap.Click += async (_, _) =>
             {
-                _pages.Reverse();
-                await ShowPage(1 - _index);
+                // The photo shown and the other side of its document trade places.
+                var partner = _index ^ 1;
+                if (partner >= _pages.Count) return;
+                (_pages[_index], _pages[partner]) = (_pages[partner], _pages[_index]);
+                await ShowPage(partner);
             };
             side.Children.Add(_swap);
         }
@@ -291,6 +313,18 @@ public sealed class ScanWindow : ThemedWindow
         var stage = new DockPanel { Margin = new Thickness(12, 12, 0, 12) };
         DockPanel.SetDock(hint, Dock.Bottom);
         stage.Children.Add(hint);
+        if (_cards)
+        {
+            _stripBox.Children.Add(new TextBlock { Text = "Order in the PDF, top to bottom · drag to move", Style = (Style)FindResource("Dim"), Margin = new Thickness(0, 0, 0, 6) });
+            _stripBox.Children.Add(_strip);
+            _strip.MouseLeftButtonDown += OnStripDown;
+            _strip.MouseMove += OnStripMove;
+            _strip.MouseLeftButtonUp += OnStripUp;
+            _strip.LostMouseCapture += (_, _) => EndStripDrag();
+            DockPanel.SetDock(_stripBox, Dock.Bottom);
+            stage.Children.Add(_stripBox);
+            BuildStrip();
+        }
         var stageGrid = new Grid();
         stageGrid.Children.Add(new Border { CornerRadius = new CornerRadius(10), ClipToBounds = true, Child = _surface });
         _loading.VerticalAlignment = VerticalAlignment.Center;
@@ -336,13 +370,7 @@ public sealed class ScanWindow : ThemedWindow
         if (index < 0 || index >= _pages.Count) return;
         _index = index;
         var page = Current;
-        _pageLabel.Text = _cards ? Loc.T(index == 0 ? "Front" : "Back") : Loc.F("Page {0} of {1}", index + 1, _pages.Count);
-        _fileLabel.Text = Path.GetFileName(page.File);
-        _fileLabel.ToolTip = page.File;
-        _previous.IsEnabled = index > 0;
-        _next.IsEnabled = index < _pages.Count - 1;
-        _remove.IsEnabled = _pages.Count > 1;
-        _swap.IsEnabled = _pages.Count == 2;
+        UpdatePageInfo();
         _autoTone.IsChecked = page.AutoTone;
         UpdateSaveLabel();
 
@@ -352,26 +380,9 @@ public sealed class ScanWindow : ThemedWindow
             _image.Source = null;
             _result.Source = null;
             SetHandlesVisible(false);
-            try
+            if (!await Load(page))
             {
-                var (display, scale, corners) = await Task.Run(() =>
-                {
-                    using var photo = ScanEngine.LoadPhoto(page.File, page.Rotation);
-                    var display = (MagickImage)photo.Clone();
-                    if (display.Width > DisplayMax || display.Height > DisplayMax)
-                        display.Resize(new MagickGeometry(DisplayMax, DisplayMax));
-                    var corners = FindCorners(display);
-                    return (display, photo.Width / (double)display.Width, corners);
-                });
-                page.Display = display;
-                page.Scale = scale;
-                page.Corners ??= corners;
-                page.Bitmap = ImageEngine.ToBitmapSource(display);
-            }
-            catch (Exception ex)
-            {
-                _loading.Visibility = Visibility.Collapsed;
-                Dialogs.Error(Loc.T("Can't open image"), $"{Path.GetFileName(page.File)}\n{ex.Message}");
+                if (page == Current) _loading.Visibility = Visibility.Collapsed;
                 return;
             }
             if (page != Current) return;
@@ -384,6 +395,171 @@ public sealed class ScanWindow : ThemedWindow
         Fit();
         UpdateResult();
         _surface.Focus();
+    }
+
+    /// <summary>What the side column says about the page shown, whose place can change while dragging in the strip.</summary>
+    private void UpdatePageInfo()
+    {
+        var page = Current;
+        _pageLabel.Text = _cards ? SideName(_index) : Loc.F("Page {0} of {1}", _index + 1, _pages.Count);
+        _fileLabel.Text = Path.GetFileName(page.File);
+        _fileLabel.ToolTip = page.File;
+        _previous.IsEnabled = _index > 0;
+        _next.IsEnabled = _index < _pages.Count - 1;
+        _remove.IsEnabled = _pages.Count > 1;
+        _swap.IsEnabled = (_index ^ 1) < _pages.Count;
+        RefreshStrip();
+    }
+
+    /// <summary>Front or back; with more than two sides, which document as well.</summary>
+    private string SideName(int index)
+    {
+        var side = Loc.T(index % 2 == 0 ? "Front" : "Back");
+        return _pages.Count <= 2 ? side : Loc.F("Document {0} · {1}", index / 2 + 1, side);
+    }
+
+    private Task<bool> Load(Page page) => page.Loading ??= LoadPhoto(page);
+
+    private async Task<bool> LoadPhoto(Page page)
+    {
+        var cards = _cards;
+        try
+        {
+            var (display, scale, corners, thumb) = await Task.Run(() =>
+            {
+                using var photo = ScanEngine.LoadPhoto(page.File, page.Rotation);
+                var display = (MagickImage)photo.Clone();
+                if (display.Width > DisplayMax || display.Height > DisplayMax)
+                    display.Resize(new MagickGeometry(DisplayMax, DisplayMax));
+                var corners = FindCorners(display);
+                BitmapSource? thumb = null;
+                if (cards)
+                {
+                    using var card = ScanEngine.StraightenCard(display, corners, 0.3);
+                    thumb = ImageEngine.ToBitmapSource(card);
+                }
+                return (display, photo.Width / (double)display.Width, corners, thumb);
+            });
+            if (_closed || !_pages.Contains(page))
+            {
+                display.Dispose();
+                return false;
+            }
+            page.Display = display;
+            page.Scale = scale;
+            page.Corners ??= corners;
+            page.Thumb ??= thumb;
+            page.Bitmap = ImageEngine.ToBitmapSource(display);
+            RefreshStrip();
+            return true;
+        }
+        catch (Exception ex)
+        {
+            if (page == Current) _loading.Visibility = Visibility.Collapsed;
+            if (!_closed) Dialogs.Error(Loc.T("Can't open image"), $"{Path.GetFileName(page.File)}\n{ex.Message}");
+            return false;
+        }
+    }
+
+    // ---------- Strip (card mode) ----------
+
+    /// <summary>One slot per side, left to right as they go top to bottom on the page.</summary>
+    private void BuildStrip()
+    {
+        _strip.Children.Clear();
+        foreach (var _ in _pages)
+        {
+            var image = new Image { Height = 86, Stretch = Stretch.Uniform };
+            RenderOptions.SetBitmapScalingMode(image, BitmapScalingMode.HighQuality);
+            var label = new TextBlock { Style = (Style)FindResource("Dim"), HorizontalAlignment = HorizontalAlignment.Center, Margin = new Thickness(0, 4, 0, 0), TextTrimming = TextTrimming.CharacterEllipsis };
+            var content = new StackPanel();
+            content.Children.Add(image);
+            content.Children.Add(label);
+            _strip.Children.Add(new Border
+            {
+                Width = SlotWidth, Margin = new Thickness(0, 0, SlotPitch - SlotWidth, 0), Padding = new Thickness(4),
+                CornerRadius = new CornerRadius(6), BorderThickness = new Thickness(2), Child = content,
+                Background = new SolidColorBrush(Color.FromRgb(0x10, 0x10, 0x12)), Cursor = Cursors.Hand,
+            });
+        }
+        _stripBox.Visibility = _pages.Count > 1 ? Visibility.Visible : Visibility.Collapsed;
+        RefreshStrip();
+    }
+
+    private void RefreshStrip()
+    {
+        if (!_cards || _strip.Children.Count != _pages.Count) return;
+        for (var i = 0; i < _pages.Count; i++)
+        {
+            var slot = (Border)_strip.Children[i];
+            var content = (StackPanel)slot.Child;
+            ((Image)content.Children[0]).Source = _pages[i].Thumb;
+            ((TextBlock)content.Children[1]).Text = SideName(i);
+            slot.BorderBrush = i == _index ? (Brush)FindResource("Accent") : Brushes.Transparent;
+            slot.Opacity = _dragging && i == _dragFrom ? 0.6 : 1;
+        }
+    }
+
+    private int SlotAt(Point at)
+    {
+        var i = (int)Math.Floor(at.X / SlotPitch);
+        return i >= 0 && i < _pages.Count ? i : -1;
+    }
+
+    private void OnStripDown(object sender, MouseButtonEventArgs e)
+    {
+        if (_busy) return;
+        var at = e.GetPosition(_strip);
+        _dragFrom = SlotAt(at);
+        if (_dragFrom < 0) return;
+        _dragStart = at;
+        _dragging = false;
+        _strip.CaptureMouse();
+        e.Handled = true;
+    }
+
+    private void OnStripMove(object sender, MouseEventArgs e)
+    {
+        if (_dragFrom < 0) return;
+        var at = e.GetPosition(_strip);
+        if (!_dragging)
+        {
+            if (Math.Abs(at.X - _dragStart.X) < SystemParameters.MinimumHorizontalDragDistance * 2) return;
+            _dragging = true;
+            _strip.Cursor = Cursors.SizeWE;
+        }
+        // The side follows the mouse, the others make room.
+        var to = Math.Clamp((int)Math.Floor(at.X / SlotPitch), 0, _pages.Count - 1);
+        if (to != _dragFrom)
+        {
+            var current = Current;
+            var moved = _pages[_dragFrom];
+            _pages.RemoveAt(_dragFrom);
+            _pages.Insert(to, moved);
+            _dragFrom = to;
+            _index = _pages.IndexOf(current);
+            UpdatePageInfo();
+        }
+        RefreshStrip();
+    }
+
+    private void OnStripUp(object sender, MouseButtonEventArgs e)
+    {
+        if (_dragFrom < 0) return;
+        var target = _dragFrom;
+        EndStripDrag();
+        _strip.ReleaseMouseCapture();
+        // A click, or the end of a drag, shows that side.
+        if (target != _index) _ = ShowPage(target);
+    }
+
+    private void EndStripDrag()
+    {
+        if (_dragFrom < 0 && !_dragging) return;
+        _dragFrom = -1;
+        _dragging = false;
+        _strip.Cursor = null;
+        RefreshStrip();
     }
 
     private Point[] Detect(Page page) => page.Display is { } d ? FindCorners(d) : page.Corners ?? [];
@@ -429,6 +605,7 @@ public sealed class ScanWindow : ThemedWindow
         lock (Current) Current.Display?.Dispose();
         _pages.RemoveAt(_index);
         UpdateTitle();
+        if (_cards) BuildStrip();
         await ShowPage(Math.Min(_index, _pages.Count - 1));
     }
 
@@ -652,7 +829,11 @@ public sealed class ScanWindow : ThemedWindow
             }
         }).ContinueWith(t =>
         {
-            if (t.IsCompletedSuccessfully && version == _previewVersion) _result.Source = t.Result;
+            if (!t.IsCompletedSuccessfully || version != _previewVersion) return;
+            _result.Source = t.Result;
+            if (!cards) return;
+            page.Thumb = t.Result;
+            RefreshStrip();
         }, TaskScheduler.FromCurrentSynchronizationContext());
     }
 
@@ -734,11 +915,12 @@ public sealed class ScanWindow : ThemedWindow
         var pages = ScanPages();
         var quality = Quality;
         var files = pages.Select(p => p.File).ToList();
-        var output = Dialogs.AskPdfOutput(OutputPaths.DirectoryFor(files[0]), files.Count == 1 || _cards ? OutputPaths.BaseName(files[0]) : Loc.T("Scan"));
+        var output = Dialogs.AskPdfOutput(OutputPaths.DirectoryFor(files[0]), _cards && files.Count > 2 ? Loc.T("Documents")
+            : files.Count == 1 || _cards ? OutputPaths.BaseName(files[0]) : Loc.T("Scan"));
         if (output is null) return;
         if (_cards)
         {
-            JobQueue.Enqueue(Loc.T("ID card → PDF"), files[0], (job, _) =>
+            JobQueue.Enqueue(Loc.T(files.Count > 2 ? "ID cards → PDF" : "ID card → PDF"), files[0], (job, _) =>
             {
                 ScanEngine.CardsToPdf(pages, output, job.Report);
                 job.Outputs.Add(output);
